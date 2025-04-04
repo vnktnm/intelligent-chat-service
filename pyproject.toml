@@ -1,0 +1,26 @@
+[project]
+name = "intelligent-chat-service"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "venkatfrais123",email = "venkatnm94@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12,<4.0"
+dependencies = [
+    "uvicorn (>=0.34.0,<0.35.0)",
+    "python-dotenv (>=1.1.0,<2.0.0)",
+    "fastapi (>=0.115.12,<0.116.0)",
+    "loguru (>=0.7.3,<0.8.0)",
+    "openai (>=1.70.0,<2.0.0)",
+    "requests (>=2.32.3,<3.0.0)",
+    "aiohttp (>=3.11.16,<4.0.0)",
+    "motor (>=3.7.0,<4.0.0)",
+    "pyyaml (>=6.0.2,<7.0.0)",
+    "qdrant-client (>=1.13.3,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

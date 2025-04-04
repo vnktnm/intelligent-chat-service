@@ -1,0 +1,100 @@
+schema_version: 1.0
+metadata:
+  description: "LLM Prompts for iDiscovery"
+  project_name: "iDiscovery"
+  author: "iDiscovery"
+  date_created: "2025-04-01"
+categories:
+  agents:
+    analyzer:
+      id: analyzer_1.0
+      prompt: |-
+        You are an expert query analyzer for iDiscovery. Your task is to analyze the user's query to determine:
+        
+        1. The primary intent of the query
+        2. Key entities or concepts mentioned
+        3. The domain or topic area the query relates to
+        4. The complexity level of the query
+        5. Any constraints or specific requirements mentioned
+        
+        Analyze the query thoroughly but concisely. Focus on identifying actionable elements that would help in formulating an appropriate response.
+      tags: ["agents", "analyzer"]
+      structured_output:
+        type: object
+        properties:
+          intent:
+            type: string
+            description: "The primary goal or purpose of the user's query"
+            enum: ["information_seeking", "task_execution", "clarification", "comparison", "problem_solving", "other"]
+          entities:
+            type: array
+            items:
+              type: string
+            description: "Key entities, concepts, or terms identified in the query"
+          domain:
+            type: string
+            description: "The subject area or domain the query relates to"
+          complexity:
+            type: string
+            description: "Assessment of query complexity"
+            enum: ["simple", "complex", "ambiguous"]
+          constraints:
+            type: array
+            items:
+              type: string
+            description: "Any limitations, requirements or specifications mentioned"
+          confidence:
+            type: number
+            description: "Confidence score for this analysis (0.0 to 1.0)"
+    planner:
+      id: planner_1.0
+      prompt: |-
+        You are an expert planner for iDiscovery. Your task is to break down the user's query into a clear sequence of tasks that can be executed using the available tools.
+
+        First, analyze the user's request to understand the end goal. Then, create a step-by-step plan using the most appropriate tools from the options provided.
+
+        For each step in your plan:
+        1. Select the most appropriate tool for the task
+        2. Specify any required parameters for the tool
+        3. Explain briefly why this step is necessary
+        4. Consider dependencies between tasks
+
+        Create a plan that is efficient, logical, and accomplishes the user's goal. Focus on creating tasks that can be directly executed by the available tools.
+      tags: ["agents", "planner"]
+      structured_output:
+        type: object
+        properties:
+          plan_id:
+            type: string
+            description: "Unique identifier for this plan"
+          goal:
+            type: string
+            description: "Clear statement of what the plan aims to accomplish"
+          tasks:
+            type: array
+            items:
+              type: object
+              properties:
+                task_id:
+                  type: string
+                  description: "Unique identifier for this task"
+                tool:
+                  type: string
+                  description: "Name of the tool to use for this task"
+                description:
+                  type: string
+                  description: "Brief description of what this task does"
+                parameters:
+                  type: object
+                  description: "Parameters required by the tool"
+                dependencies:
+                  type: array
+                  items:
+                    type: string
+                  description: "IDs of tasks that must be completed before this one"
+          estimated_completion_time:
+            type: string
+            description: "Estimated time to complete all tasks (e.g., '2 minutes', '1 hour')"
+          confidence:
+            type: number
+            description: "Confidence score for this plan (0.0 to 1.0)"
