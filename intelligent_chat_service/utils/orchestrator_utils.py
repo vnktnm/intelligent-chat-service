@@ -26,6 +26,8 @@ def standardize_event_type(event_type: str) -> str:
         "content_chunk": "ui:content:chunk",
         "content_start": "ui:content:start",
         "content_end": "ui:content:end",
+        "human_input_requested": "ui:human:input_requested",
+        "human_input_received": "ui:human:input_received",
     }
 
     return event_mapping.get(event_type, f"ui:event:{event_type}")

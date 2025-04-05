@@ -52,3 +52,9 @@ PROMPT_PLANNER_AGENT = os.environ.get("PROMPT_PLANNER_AGENT", "planner_agent")
 
 # Tools
 TOOL_QDRANT = os.environ.get("TOOL_QDRANT", "tools-qdrant")
+
+# Human in the loop configuration
+HUMAN_IN_THE_LOOP_ENABLED = (
+    os.environ.get("HUMAN_IN_THE_LOOP_ENABLED", "False").lower() == "true"
+)
+HUMAN_RESPONSE_TIMEOUT = int(os.environ.get("HUMAN_RESPONSE_TIMEOUT", "300"))  # seconds

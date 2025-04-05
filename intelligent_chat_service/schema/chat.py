@@ -9,6 +9,9 @@ class Config(BaseModel):
     user_id: str = Field(..., description="User ID")
     session_id: str = Field(..., description="Session ID")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Metadata")
+    human_in_the_loop: bool = Field(
+        config.HUMAN_IN_THE_LOOP_ENABLED, description="Enable human-in-the-loop"
+    )
 
 
 class ChatRequest(BaseModel):

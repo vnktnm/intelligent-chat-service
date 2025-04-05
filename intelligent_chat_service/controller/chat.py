@@ -40,6 +40,18 @@ async def handle_orchestration(
         HTTPException: If an error occurs during orchestration
     """
     try:
+        # Ensure human_in_the_loop is properly initialized in config
+        if request.config:
+            # Log human_in_the_loop setting for debugging
+            logger.info(
+                f"Human in the loop setting: {request.config.human_in_the_loop}"
+            )
+        else:
+            # Create default config if not provided
+            logger.info(
+                f"No config provided, using default human_in_the_loop: {config.HUMAN_IN_THE_LOOP_ENABLED}"
+            )
+
         # Get the appropriate orchestrator for this workflow
         try:
             orchestrator = get_orchestrator(request)

@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 from utils import logger
 from utils.logger_utils import set_request_id
-from controller import chat_router
+from controller import chat_router, human_router
 import uuid
 
 
@@ -85,3 +85,4 @@ async def health():
 
 
 app.include_router(chat_router)
+app.include_router(human_router)
