@@ -3,6 +3,9 @@ let eventSource = null;
 let currentInteractionId = null;
 let pendingHelpMarkerFound = false;
 let checkingInterval = null;
+let sessionId = null;
+let currentThreadId = null;
+let interactionHistory = [];
 
 // DOM Elements
 const chatMessages = document.getElementById('chat-messages');
@@ -19,6 +22,9 @@ const submitHumanInput = document.getElementById('submit-human-input');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+  // Initialize session ID or retrieve from storage
+  initializeSession();
+
   // Set up event listeners
   sendButton.addEventListener('click', sendMessage);
   userInput.addEventListener('keydown', (e) => {
@@ -46,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Add window resize handling
   window.addEventListener('resize', () => {
+    adjustLayout();
     scrollToBottom();
   });
 
@@ -78,6 +85,12 @@ document.addEventListener('DOMContentLoaded', () => {
     clearLogBtn.addEventListener('click', clearEventLog);
   }
 
+  // Add history panel toggle functionality
+  const historyToggle = document.getElementById('history-toggle');
+  if (historyToggle) {
+    historyToggle.addEventListener('click', toggleInteractionHistory);
+  }
+
   // Initialize with instructions
   clearEventLog();
 
@@ -86,7 +99,62 @@ document.addEventListener('DOMContentLoaded', () => {
   if (statusPanel) {
     statusPanel.style.display = 'flex';
   }
+
+  // Initialize layout adjustment
+  adjustLayout();
+
+  // Set up the resize observers for responsive behavior
+  setupResizeObservers();
+
+  // Add CSS for new message indicator
+  addNewMessageIndicatorStyle();
 });
+
+// Initialize or retrieve session
+function initializeSession() {
+  // Try to get existing session ID from localStorage
+  sessionId = localStorage.getItem('session_id');
+
+  // If no session exists, create a new one
+  if (!sessionId) {
+    sessionId = 'session-' + generateUniqueId();
+    localStorage.setItem('session_id', sessionId);
+    logEvent('System', `New session created: ${sessionId}`);
+  } else {
+    logEvent('System', `Restored session: ${sessionId}`);
+
+    // Check for any pending interactions from previous session
+    setTimeout(() => {
+      checkPendingInteractions();
+    }, 1000);
+  }
+
+  // Load interaction history if available
+  const savedHistory = localStorage.getItem('interaction_history');
+  if (savedHistory) {
+    try {
+      interactionHistory = JSON.parse(savedHistory);
+      updateInteractionHistoryDisplay();
+      logEvent(
+        'System',
+        `Loaded ${interactionHistory.length} past interactions`
+      );
+    } catch (e) {
+      console.error('Failed to parse interaction history:', e);
+    }
+  }
+
+  // Update session info display
+  document.getElementById('session-id').textContent = sessionId;
+}
+
+// Generate unique ID for various purposes
+function generateUniqueId() {
+  return (
+    Math.random().toString(36).substring(2, 15) +
+    Math.random().toString(36).substring(2, 15)
+  );
+}
 
 // Add example prompts to help users
 function addExamplePrompts() {
@@ -117,7 +185,7 @@ function addExamplePrompts() {
   chatMessages.appendChild(examplesContainer);
 }
 
-// Send user message
+// Send user message - updated to handle thread management
 async function sendMessage() {
   const message = userInput.value.trim();
   if (!message) return;
@@ -144,23 +212,25 @@ async function sendMessage() {
     // Update connection status
     updateConnectionStatus('Connecting...');
 
-    // Generate a unique thread ID
-    const threadId = 'thread-' + Math.random().toString(36).substring(2, 15);
-
-    // Create request payload
+    // Create request payload with improved tracking
     const payload = {
       workflow_name: 'idiscovery_orchestrator',
       user_input: message,
       selected_sources: [],
       config: {
-        thread_id: threadId,
+        thread_id:
+          currentThreadId || (currentThreadId = 'thread-' + generateUniqueId()),
         client_id: 'ui_test_client',
         user_id: 'ui_test_user',
-        session_id: 'ui_test_session',
+        session_id: sessionId,
         human_in_the_loop: humanToggle.checked,
       },
       stream: true,
     };
+
+    // Save current thread ID
+    localStorage.setItem('current_thread_id', currentThreadId);
+    document.getElementById('thread-id').textContent = currentThreadId;
 
     // Log the outgoing request
     logEvent('Request', payload);
@@ -415,6 +485,21 @@ function handleHumanInputRequest(data) {
   currentInteractionId = interactionId;
   window.lastReceivedInteractionId = interactionId; // Save in window for recovery if needed
 
+  // Store interaction in history
+  const interaction = {
+    id: interactionId,
+    thread_id: currentThreadId,
+    session_id: sessionId,
+    timestamp: new Date().toISOString(),
+    question: question,
+    response: null,
+    status: 'pending',
+  };
+
+  interactionHistory.push(interaction);
+  saveInteractionHistory();
+  updateInteractionHistoryDisplay();
+
   humanQuestion.textContent = question;
   humanAnswer.value = '';
 
@@ -533,7 +618,7 @@ async function checkPendingInteractions() {
   }
 }
 
-// Submit human response
+// Submit human response with enhanced tracking
 async function submitHumanResponse() {
   // Make sure we have a current interaction ID
   if (!currentInteractionId) {
@@ -592,6 +677,19 @@ async function submitHumanResponse() {
     const resultData = await result.json();
     logEvent('Response', resultData);
 
+    // Update interaction in history
+    const interactionIndex = interactionHistory.findIndex(
+      (i) => i.id === currentInteractionId
+    );
+    if (interactionIndex >= 0) {
+      interactionHistory[interactionIndex].response = response;
+      interactionHistory[interactionIndex].status = 'submitted';
+      interactionHistory[interactionIndex].response_time =
+        new Date().toISOString();
+      saveInteractionHistory();
+      updateInteractionHistoryDisplay();
+    }
+
     // Hide the panel and reset
     humanInputPanel.classList.remove('active');
     appendSystemMessage('Human response submitted: ' + response);
@@ -631,6 +729,112 @@ async function submitHumanResponse() {
   } finally {
     submitHumanInput.disabled = false;
     submitHumanInput.textContent = 'Submit Response';
+  }
+}
+
+// Save interaction history to localStorage
+function saveInteractionHistory() {
+  // Keep only the last 50 interactions to avoid storage issues
+  const trimmedHistory = interactionHistory.slice(-50);
+  localStorage.setItem('interaction_history', JSON.stringify(trimmedHistory));
+}
+
+// Update the interaction history display in UI
+function updateInteractionHistoryDisplay() {
+  const historyList = document.getElementById('interaction-history-list');
+  if (!historyList) return;
+
+  historyList.innerHTML = '';
+
+  // Group by thread
+  const threadGroups = {};
+  interactionHistory.forEach((interaction) => {
+    if (!threadGroups[interaction.thread_id]) {
+      threadGroups[interaction.thread_id] = [];
+    }
+    threadGroups[interaction.thread_id].push(interaction);
+  });
+
+  // Create elements for each thread
+  Object.keys(threadGroups).forEach((threadId) => {
+    const threadItem = document.createElement('div');
+    threadItem.className = 'history-thread';
+
+    const threadHeader = document.createElement('div');
+    threadHeader.className = 'history-thread-header';
+    threadHeader.innerHTML = `<strong>Thread:</strong> ${threadId.substring(
+      0,
+      8
+    )}...`;
+
+    if (threadId === currentThreadId) {
+      threadHeader.classList.add('current-thread');
+    }
+
+    threadItem.appendChild(threadHeader);
+
+    // Add interactions for this thread
+    const interactions = threadGroups[threadId];
+    interactions.forEach((interaction) => {
+      const interactionItem = document.createElement('div');
+      interactionItem.className = `history-interaction ${interaction.status}`;
+
+      // Format timestamp
+      const date = new Date(interaction.timestamp);
+      const timeStr = `${date.getHours()}:${date
+        .getMinutes()
+        .toString()
+        .padStart(2, '0')}`;
+
+      interactionItem.innerHTML = `
+        <div class="interaction-time">${timeStr}</div>
+        <div class="interaction-content">${interaction.question.substring(
+          0,
+          40
+        )}...</div>
+        <div class="interaction-status">${interaction.status}</div>
+      `;
+
+      // Add click event to view details
+      interactionItem.addEventListener('click', () => {
+        showInteractionDetails(interaction);
+      });
+
+      threadItem.appendChild(interactionItem);
+    });
+
+    historyList.appendChild(threadItem);
+  });
+}
+
+// Show interaction details in a modal/panel
+function showInteractionDetails(interaction) {
+  // Implementation of showing details would go here
+  // This could be a modal or side panel with full details
+  console.log('Showing details for interaction:', interaction);
+
+  // Display in the info panel
+  document.getElementById('interaction-details').innerHTML = `
+    <h4>Interaction Details</h4>
+    <div><strong>ID:</strong> ${interaction.id}</div>
+    <div><strong>Thread:</strong> ${interaction.thread_id}</div>
+    <div><strong>Time:</strong> ${new Date(
+      interaction.timestamp
+    ).toLocaleString()}</div>
+    <div><strong>Status:</strong> ${interaction.status}</div>
+    <div><strong>Question:</strong> ${interaction.question}</div>
+    <div><strong>Response:</strong> ${
+      interaction.response || 'Not provided yet'
+    }</div>
+  `;
+}
+
+// Toggle the interaction history panel
+function toggleInteractionHistory() {
+  const historyPanel = document.getElementById('interaction-history-panel');
+  if (historyPanel) {
+    historyPanel.classList.toggle('active');
+    updateInteractionHistoryDisplay();
   }
 }
 
@@ -803,18 +1007,154 @@ function clearEventLog() {
   );
 }
 
-// Improved scroll function
+// Improved scroll function with better handling of dynamic content
 function scrollToBottom() {
-  // First attempt immediate scroll
+  // Only scroll if the chat messages container exists
+  if (!chatMessages) return;
+
+  // First check if user has scrolled up (manual scrolling)
+  const isScrolledToBottom =
+    chatMessages.scrollHeight - chatMessages.clientHeight <=
+    chatMessages.scrollTop + 50; // Within 50px of bottom
+
+  // Don't auto-scroll if user has scrolled up to read previous messages
+  // unless they're at the bottom or we're showing human input panel
+  if (!isScrolledToBottom && !humanInputPanel.classList.contains('active')) {
+    // Add a subtle indicator that new messages are below
+    showNewMessageIndicator();
+    return;
+  }
+
+  // Scroll the chat container to bottom
   chatMessages.scrollTop = chatMessages.scrollHeight;
 
-  // Then do another scroll after a short delay to ensure content is rendered
-  setTimeout(() => {
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-  }, 50);
+  // If human input panel is active, ensure it's visible
+  if (humanInputPanel.classList.contains('active')) {
+    // Use smooth scrolling for better UX
+    humanInputPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
 
-  // Final scroll after all content should be rendered
-  setTimeout(() => {
+  // Hide the new message indicator if it exists
+  hideNewMessageIndicator();
+}
+
+// Show an indicator that new messages are below (when user has scrolled up)
+function showNewMessageIndicator() {
+  // Check if indicator already exists
+  if (document.getElementById('new-message-indicator')) return;
+
+  const indicator = document.createElement('div');
+  indicator.id = 'new-message-indicator';
+  indicator.className = 'new-message-indicator';
+  indicator.innerHTML = 'New messages ↓';
+  indicator.addEventListener('click', () => {
+    // Scroll to bottom when clicked
     chatMessages.scrollTop = chatMessages.scrollHeight;
-  }, 300);
+    hideNewMessageIndicator();
+  });
+
+  document.querySelector('.chat-container').appendChild(indicator);
+}
+
+// Hide the new message indicator
+function hideNewMessageIndicator() {
+  const indicator = document.getElementById('new-message-indicator');
+  if (indicator) indicator.remove();
+}
+
+// Resize observer for when content changes height
+function setupResizeObservers() {
+  // Create a resize observer to detect when content changes size
+  if (window.ResizeObserver) {
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.target === chatMessages) {
+          // Handle case where chat container resizes
+          adjustChatLayout();
+          if (humanInputPanel.classList.contains('active')) {
+            // Make sure human input panel is visible when active
+            humanInputPanel.scrollIntoView({
+              behavior: 'smooth',
+              block: 'center',
+            });
+          }
+        }
+      }
+    });
+
+    // Observe the chat messages container
+    resizeObserver.observe(chatMessages);
+  }
+}
+
+// Function to adjust layout based on screen size and content
+function adjustLayout() {
+  const isMobile = window.innerWidth <= 768;
+  const container = document.querySelector('.container');
+  const chatContainer = document.querySelector('.chat-container');
+  const statusPanel = document.querySelector('.status-panel');
+
+  if (container) {
+    if (isMobile) {
+      container.style.height = 'auto';
+      container.style.minHeight = 'calc(100vh - 20px)';
+    } else {
+      container.style.minHeight = 'calc(100vh - 40px)';
+    }
+  }
+
+  // Adjust chat container to take available space
+  if (chatContainer && statusPanel) {
+    const headerHeight = document.querySelector('header').offsetHeight;
+    const statusHeight = statusPanel.offsetHeight;
+    const availableHeight =
+      window.innerHeight - headerHeight - statusHeight - 40; // 40px for padding
+
+    // Set a reasonable min height but allow growing
+    const minHeight = Math.max(300, Math.min(availableHeight, 600));
+    chatContainer.style.minHeight = `${minHeight}px`;
+  }
+
+  // Add event listener for chat container scrolling
+  if (chatMessages) {
+    chatMessages.addEventListener('scroll', handleChatScroll);
+  }
+}
+
+// Handle chat container scrolling - to detect when user scrolls up
+function handleChatScroll() {
+  const isNearBottom =
+    chatMessages.scrollHeight - chatMessages.clientHeight <=
+    chatMessages.scrollTop + 50;
+
+  if (isNearBottom) {
+    hideNewMessageIndicator();
+  }
+}
+
+// Update adjustChatLayout to fine-tune sizing
+function adjustChatLayout() {
+  // Get elements
+  const chatContainer = document.querySelector('.chat-container');
+  const containerHeight = document.querySelector('.container').clientHeight;
+  const headerHeight = document.querySelector('header').offsetHeight;
+  const statusPanel = document.querySelector('.status-panel');
+
+  if (!chatContainer || !statusPanel) return;
+
+  // Calculate available height
+  let statusHeight = statusPanel.offsetHeight;
+  let availableHeight = containerHeight - headerHeight - statusHeight - 20; // 20px buffer
+
+  // Ensure minimum reasonable height
+  availableHeight = Math.max(availableHeight, 300);
+
+  // Set chat container height
+  chatContainer.style.height = `${availableHeight}px`;
+
+  // Adjust the chat messages max-height
+  if (chatMessages) {
+    const inputAreaHeight = document.querySelector('.input-area').offsetHeight;
+    chatMessages.style.maxHeight = `${availableHeight - inputAreaHeight}px`;
+  }
 }

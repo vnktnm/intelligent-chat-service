@@ -9,6 +9,7 @@ import json
 from utils import get_orchestrator, standardize_event_type
 import uuid
 from datetime import datetime
+import config
 
 chat_router = APIRouter(prefix="/ai", tags=["AI"])
 

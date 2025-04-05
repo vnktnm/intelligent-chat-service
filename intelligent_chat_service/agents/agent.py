@@ -206,15 +206,25 @@ class Agent(Step):
         # Create a consistent interaction ID
         interaction_id = str(uuid.uuid4())
 
+        # Extract session and thread IDs from context
+        session_id = None
+        thread_id = None
+        if context and "config" in context:
+            config = context.get("config", {})
+            session_id = config.get("session_id")
+            thread_id = config.get("thread_id")
+
         # Make sure we properly emit the human input requested event here
         if callback:
-            # Explicitly trigger the human_input_requested event
+            # Explicitly trigger the human_input_requested event with tracking info
             event_data = {
                 "agent": self.name,
                 "agent_id": self.agent_id,
                 "question": question_text,
                 "interaction_id": interaction_id,
                 "timestamp": datetime.now().isoformat() + "Z",
+                "session_id": session_id,  # Include session ID
+                "thread_id": thread_id,  # Include thread ID
             }
 
             # Store event data in context so it can be used by human_interaction_service

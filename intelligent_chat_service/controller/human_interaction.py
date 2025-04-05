@@ -33,6 +33,13 @@ async def submit_human_response(
     """Submit a human response to an agent's question."""
     logger.info(f"Received human response for interaction {response.interaction_id}")
 
+    # Log additional tracking information if available
+    if response.metadata:
+        session_id = response.metadata.get("session_id")
+        thread_id = response.metadata.get("thread_id")
+        if session_id or thread_id:
+            logger.info(f"Client info - Session: {session_id}, Thread: {thread_id}")
+
     # Debug: Log the pending interactions
     pending_interactions = human_service.get_pending_interactions()
     logger.info(f"Current pending interactions: {list(pending_interactions.keys())}")
@@ -71,6 +78,14 @@ async def submit_human_response(
         "status": "success",
         "message": "Response submitted successfully",
         "interaction_id": interaction_id,
+        "tracking": {
+            "thread_id": (
+                response.metadata.get("thread_id") if response.metadata else None
+            ),
+            "session_id": (
+                response.metadata.get("session_id") if response.metadata else None
+            ),
+        },
     }
 
 
@@ -90,3 +105,39 @@ async def cleanup_interactions(
     """Manually trigger cleanup of completed interactions."""
     cleaned_count = human_service.cleanup_responses()
     return {"status": "success", "cleaned_count": cleaned_count}
+
+
+@human_router.get("/session/{session_id}")
+async def get_session_interactions(
+    session_id: str,
+    human_service: HumanInteractionService = Depends(get_human_interaction_service),
+):
+    """Get all interactions for a particular session."""
+    pending = human_service.get_pending_interactions()
+
+    # Filter interactions by session ID if stored in metadata
+    session_interactions = {
+        interaction_id: details
+        for interaction_id, details in pending.items()
+        if details.get("context", {}).get("config", {}).get("session_id") == session_id
+    }
+
+    return {"interactions": session_interactions, "count": len(session_interactions)}
+
+
+@human_router.get("/thread/{thread_id}")
+async def get_thread_interactions(
+    thread_id: str,
+    human_service: HumanInteractionService = Depends(get_human_interaction_service),
+):
+    """Get all interactions for a particular thread."""
+    pending = human_service.get_pending_interactions()
+
+    # Filter interactions by thread ID if stored in metadata
+    thread_interactions = {
+        interaction_id: details
+        for interaction_id, details in pending.items()
+        if details.get("context", {}).get("config", {}).get("thread_id") == thread_id
+    }
+
+    return {"interactions": thread_interactions, "count": len(thread_interactions)}

@@ -20,10 +20,21 @@
           <button id="check-pending" class="debug-button">
             Check Pending Interactions
           </button>
+          <button id="history-toggle" class="debug-button">
+            Interaction History
+          </button>
         </div>
       </header>
 
       <div class="chat-container">
+        <div id="interaction-history-panel" class="interaction-history-panel">
+          <div class="panel-header">
+            <h3>Interaction History</h3>
+            <button class="close-button">&times;</button>
+          </div>
+          <div id="interaction-history-list" class="history-list"></div>
+        </div>
+
         <div id="chat-messages" class="chat-messages"></div>
 
         <div class="human-input-panel" id="human-input-panel">
@@ -49,6 +60,31 @@
         <div class="panel-header">
           <h3>Connection Status</h3>
           <div id="connection-status">Disconnected</div>
+        </div>
+
+        <div class="debug-info">
+          <h3>Session Information</h3>
+          <div class="debug-grid">
+            <div class="debug-field">
+              <span>Session ID:</span>
+              <span id="session-id">Initializing...</span>
+            </div>
+            <div class="debug-field">
+              <span>Thread ID:</span>
+              <span id="thread-id">None</span>
+            </div>
+            <div class="debug-field">
+              <span>Current Interaction ID:</span>
+              <span id="interaction-id">None</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="debug-info">
+          <h3>Interaction Details</h3>
+          <div id="interaction-details" class="interaction-details">
+            <p>No interaction selected</p>
+          </div>
         </div>
 
         <div class="debug-info">

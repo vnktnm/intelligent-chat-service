@@ -54,7 +54,17 @@ class HumanInteractionService:
         # Create an event that will be set when the human responds
         self.response_events[interaction_id] = asyncio.Event()
 
-        # Store the interaction details with the interaction_id explicitly included
+        # Extract session and thread IDs from context if available
+        session_id = None
+        thread_id = None
+
+        if context and isinstance(context, dict):
+            config = context.get("config", {})
+            if isinstance(config, dict):
+                session_id = config.get("session_id")
+                thread_id = config.get("thread_id")
+
+        # Store the interaction details with enhanced tracking
         self.pending_interactions[interaction_id] = {
             "agent_id": agent_id,
             "question": question,
@@ -62,10 +72,13 @@ class HumanInteractionService:
             "timestamp": datetime.now().isoformat() + "Z",
             "interaction_id": interaction_id,
             "counter": self._debug_counter,
+            "session_id": session_id,
+            "thread_id": thread_id,
         }
 
         logger.info(
-            f"Agent {agent_id} requested human input: {question} (interaction_id: {interaction_id}, counter: {self._debug_counter})"
+            f"Agent {agent_id} requested human input (interaction_id: {interaction_id}, "
+            f"session: {session_id}, thread: {thread_id})"
         )
 
         # Debug: Log all pending interactions
@@ -185,6 +198,22 @@ class HumanInteractionService:
 
         logger.info(f"Cleaned up {len(to_remove)} human responses")
         return len(to_remove)
+
+    def get_interactions_by_session(self, session_id: str) -> Dict[str, Dict[str, Any]]:
+        """Get all interactions for a particular session."""
+        return {
+            interaction_id: details
+            for interaction_id, details in self.pending_interactions.items()
+            if details.get("session_id") == session_id
+        }
+
+    def get_interactions_by_thread(self, thread_id: str) -> Dict[str, Dict[str, Any]]:
+        """Get all interactions for a particular thread."""
+        return {
+            interaction_id: details
+            for interaction_id, details in self.pending_interactions.items()
+            if details.get("thread_id") == thread_id
+        }
 
 
 # Singleton instance
