@@ -5,6 +5,20 @@ from datetime import datetime
 from loguru import logger
 import logging
 import config
+import contextvars
+
+# Create a context variable to store request IDs
+request_id_var = contextvars.ContextVar("request_id", default=None)
+
+
+def set_request_id(request_id):
+    """Set the request ID in the current context"""
+    request_id_var.set(request_id)
+
+
+def get_request_id():
+    """Get the request ID from the current context"""
+    return request_id_var.get()
 
 
 class InterceptHandler(logging.Handler):
@@ -54,6 +68,11 @@ class JsonSink:
             "process_id": record["process"].id,
             "thread_id": record["thread"].id,
         }
+
+        # Include request_id if available in the context
+        request_id = get_request_id()
+        if request_id is not None:
+            log_data["request_id"] = request_id
 
         # Include exception info if available
         if record["exception"]:

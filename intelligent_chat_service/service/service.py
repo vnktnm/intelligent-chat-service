@@ -4,7 +4,9 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from utils import logger
+from utils.logger_utils import set_request_id
 from controller import chat_router
+import uuid
 
 
 @asynccontextmanager
@@ -25,14 +27,16 @@ app = FastAPI(lifespan=lifespan, title="Intelligent Chat Service", version="1.0.
 async def log_requests(request: Request, call_next):
     start_time = time.time()
 
-    # create a request ID
-    request_id = request.headers.get("x-request-id", f"req-{time.time()}")
+    # create a request ID with UUID format
+    request_id = request.headers.get("x-request-id", f"req-{uuid.uuid4()}")
+
+    # Set the request ID in the context
+    set_request_id(request_id)
 
     # log the request
     logger.info(
         f"Request Started: {request.method} {request.url.path}",
         extra={
-            "request_id": request_id,
             "method": request.method,
             "path": request.url.path,
             "client_ip": request.client.host,
@@ -49,7 +53,6 @@ async def log_requests(request: Request, call_next):
     logger.info(
         f"Request Completed: {request.method} {request.url.path}",
         extra={
-            "request_id": request_id,
             "method": request.method,
             "path": request.url.path,
             "status_code": response.status_code,
