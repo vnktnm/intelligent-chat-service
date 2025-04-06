@@ -1,0 +1,352 @@
+{
+  "info": {
+    "name": "Intelligent Chat Service API",
+    "description": "A collection for testing the Intelligent Chat Service API endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "item": [
+    {
+      "name": "Health Check & Base",
+      "item": [
+        {
+          "name": "Root",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}",
+              "host": ["{{baseUrl}}"]
+            },
+            "description": "Get welcome message"
+          },
+          "response": []
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Check if service is healthy"
+          },
+          "response": []
+        }
+      ],
+      "description": "Basic health check endpoints"
+    },
+    {
+      "name": "Chat",
+      "item": [
+        {
+          "name": "Execute Chat Workflow",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/ai/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "chat"]
+            },
+            "description": "Start a chat conversation with the AI",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workflow_name\": \"idiscovery_orchestrator\",\n  \"user_input\": \"What is an agentic AI framework?\",\n  \"selected_sources\": [],\n  \"config\": {\n    \"thread_id\": \"thread-{{$randomUUID}}\",\n    \"client_id\": \"postman-client\",\n    \"user_id\": \"postman-user\",\n    \"session_id\": \"session-{{$randomUUID}}\",\n    \"human_in_the_loop\": true\n  },\n  \"stream\": true\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Human Interaction",
+      "item": [
+        {
+          "name": "Get Pending Interactions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ai/human/pending",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "human", "pending"]
+            },
+            "description": "Get all pending interactions waiting for human input"
+          },
+          "response": []
+        },
+        {
+          "name": "Submit Human Response",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/ai/human/response",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "human", "response"]
+            },
+            "description": "Submit a human response to an AI question",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"interaction_id\": \"{{interactionId}}\",\n  \"response\": \"This is my human response to the AI's question\",\n  \"metadata\": {\n    \"session_id\": \"session-test\",\n    \"thread_id\": \"thread-test\",\n    \"source\": \"postman\"\n  }\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cleanup Interactions",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/ai/human/cleanup",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "human", "cleanup"]
+            },
+            "description": "Manually trigger cleanup of completed interactions"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Thread Interactions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ai/human/thread/{{threadId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "human", "thread", "{{threadId}}"]
+            },
+            "description": "Get all interactions for a particular thread"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Session Interactions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ai/human/session/{{sessionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "human", "session", "{{sessionId}}"]
+            },
+            "description": "Get all interactions for a particular session"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Tools",
+      "item": [
+        {
+          "name": "Create Tool",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/ai/tools/",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "tools", ""]
+            },
+            "description": "Create a new tool with vector embeddings for semantic search",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Weather API\",\n  \"description\": \"Retrieves current weather information for a specified location\",\n  \"parameters\": [\n    {\n      \"name\": \"location\",\n      \"type\": \"string\",\n      \"description\": \"City name or coordinates\",\n      \"required\": true\n    },\n    {\n      \"name\": \"units\",\n      \"type\": \"string\",\n      \"description\": \"Temperature units (metric, imperial)\",\n      \"required\": false,\n      \"default\": \"metric\"\n    }\n  ],\n  \"endpoint\": \"https://api.example.com/weather\",\n  \"category\": \"external_api\",\n  \"tags\": [\"weather\", \"forecast\", \"api\"],\n  \"version\": \"1.0.0\",\n  \"enabled\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Tool by ID",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ai/tools/tool/{{toolId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "tools", "tool", "{{toolId}}"]
+            },
+            "description": "Get a tool by its ID"
+          },
+          "response": []
+        },
+        {
+          "name": "List Tools",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ai/tools/list?category=external_api&tag=weather&enabled=true&skip=0&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "tools", "list"],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "external_api",
+                  "description": "Optional filter by category"
+                },
+                {
+                  "key": "tag",
+                  "value": "weather",
+                  "description": "Optional filter by tag"
+                },
+                {
+                  "key": "enabled",
+                  "value": "true",
+                  "description": "Optional filter by enabled status"
+                },
+                {
+                  "key": "skip",
+                  "value": "0"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "List all tools with optional filtering"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Tool",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{baseUrl}}/ai/tools/tool/{{toolId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "tools", "tool", "{{toolId}}"]
+            },
+            "description": "Update an existing tool",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated description for the weather API tool\",\n  \"tags\": [\"weather\", \"forecast\", \"api\", \"updated\"],\n  \"enabled\": true,\n  \"version\": \"1.0.1\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Tool",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/ai/tools/tool/{{toolId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "tools", "tool", "{{toolId}}"]
+            },
+            "description": "Delete a tool by its ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Search Tools",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/ai/tools/search?query=weather forecast&category=external_api&enabled=true&limit=5&rerank=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "tools", "search"],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "weather forecast",
+                  "description": "Search query for finding tools"
+                },
+                {
+                  "key": "category",
+                  "value": "external_api",
+                  "description": "Optional category filter"
+                },
+                {
+                  "key": "enabled",
+                  "value": "true",
+                  "description": "Optional filter for enabled tools"
+                },
+                {
+                  "key": "limit",
+                  "value": "5",
+                  "description": "Maximum number of results to return"
+                },
+                {
+                  "key": "rerank",
+                  "value": "true",
+                  "description": "Whether to use cross-encoder for reranking"
+                }
+              ]
+            },
+            "description": "Search for tools using semantic search with optional reranking"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [""]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [""]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string",
+      "description": "Base URL for the API"
+    },
+    {
+      "key": "toolId",
+      "value": "",
+      "type": "string",
+      "description": "ID of a tool for testing"
+    },
+    {
+      "key": "interactionId",
+      "value": "",
+      "type": "string",
+      "description": "ID of an interaction for testing"
+    },
+    {
+      "key": "sessionId",
+      "value": "",
+      "type": "string",
+      "description": "Session ID for testing"
+    },
+    {
+      "key": "threadId",
+      "value": "",
+      "type": "string",
+      "description": "Thread ID for testing"
+    }
+  ]
+}

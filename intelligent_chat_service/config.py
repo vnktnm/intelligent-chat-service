@@ -52,9 +52,27 @@ PROMPT_PLANNER_AGENT = os.environ.get("PROMPT_PLANNER_AGENT", "planner_agent")
 
 # Tools
 TOOL_QDRANT = os.environ.get("TOOL_QDRANT", "tools-qdrant")
+TOOL_COLLECTION_NAME = os.environ.get("TOOL_COLLECTION_NAME", "tools")
+OPENAI_EMBEDDING_MODEL = os.environ.get(
+    "OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"
+)
+EMBEDDING_MODEL_NAME = os.environ.get(
+    "EMBEDDING_MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2"
+)
+EMBEDDING_VECTOR_SIZE = int(
+    os.environ.get("EMBEDDING_VECTOR_SIZE", "1536")
+)  # OpenAI embedding size
 
 # Human in the loop configuration
 HUMAN_IN_THE_LOOP_ENABLED = (
     os.environ.get("HUMAN_IN_THE_LOOP_ENABLED", "False").lower() == "true"
 )
 HUMAN_RESPONSE_TIMEOUT = int(os.environ.get("HUMAN_RESPONSE_TIMEOUT", "300"))  # seconds
+
+# Qdrant Configuration
+QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
+QDRANT_PORT = int(os.environ.get("QDRANT_PORT", "6333"))
+QDRANT_COLLECTION_NAME = os.environ.get("QDRANT_COLLECTION_NAME", "vectors")
+QDRANT_VECTOR_SIZE = int(
+    os.environ.get("QDRANT_VECTOR_SIZE", "1536")
+)  # Default for OpenAI embeddings
