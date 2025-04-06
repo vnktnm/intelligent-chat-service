@@ -1,10 +1,14 @@
 from orchestrator import Orchestrator, IDiscoveryOrchestrator
+from orchestrator.graph_basic_orchestrator import GraphBasicOrchestrator
 from typing import Optional
 from schema import ChatRequest
 
 
 def get_orchestrator(request: ChatRequest) -> Orchestrator:
-    orchestrators = {"idiscovery_orchestrator": IDiscoveryOrchestrator}
+    orchestrators = {
+        "idiscovery_orchestrator": IDiscoveryOrchestrator,
+        "graph_basic_orchestrator": GraphBasicOrchestrator,
+    }
 
     if request.workflow_name not in orchestrators:
         raise ValueError(
@@ -28,6 +32,11 @@ def standardize_event_type(event_type: str) -> str:
         "content_end": "ui:content:end",
         "human_input_requested": "ui:human:input_requested",
         "human_input_received": "ui:human:input_received",
+        "node_started": "ui:node:started",
+        "node_completed": "ui:node:completed",
+        "node_error": "ui:node:error",
+        "node_skipped": "ui:node:skipped",
+        "orchestrator_error": "ui:orchestrator:error",
     }
 
     return event_mapping.get(event_type, f"ui:event:{event_type}")

@@ -6,6 +6,7 @@ import os
 from utils import logger
 from utils.logger_utils import set_request_id
 from controller import chat_router, human_router, tool_router
+from controller.graph_controller import graph_router
 import uuid
 from core.database.mongo import initialize_mongodb_indexes
 
@@ -91,3 +92,4 @@ async def health():
 app.include_router(chat_router)
 app.include_router(human_router)
 app.include_router(tool_router)
+app.include_router(graph_router)

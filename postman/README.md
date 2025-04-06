@@ -46,6 +46,20 @@ This directory contains a Postman collection for testing the Intelligent Chat Se
 - If there are pending interactions, copy an interaction ID and set it as the `interactionId` variable
 - Submit a response using the "Submit Human Response" request
 
+#### For Step-Based Workflows:
+
+1. Run the "Step-based Workflow with Human Interaction" request
+2. Check the "Check Pending Human Interactions" request
+3. Copy an interaction ID from the response and set it as the `interactionId` variable
+4. Submit a response using the "Submit Human Response (Step-based)" request
+
+#### For Graph-Based Workflows:
+
+1. Run the "Graph-based Workflow with Human Interaction" request
+2. Check the "Check Pending Human Interactions" request
+3. Copy an interaction ID from the response and set it as the `graphInteractionId` variable
+4. Submit a response using the "Submit Human Response (Graph-based)" request
+
 ### 4. Tool Management
 
 After creating a tool:
@@ -56,15 +70,36 @@ After creating a tool:
 4. Run "Update Tool" to modify the tool (using the updated `/tool/{id}` endpoint)
 5. Run "Delete Tool" to remove the tool when done testing (using the updated `/tool/{id}` endpoint)
 
+### 5. Graph Orchestrator Testing
+
+To test the graph-based orchestrator:
+
+1. Run "Execute Graph Workflow" to test the built-in graph orchestrator
+2. Run "Register Graph" to create a custom graph definition
+3. In the "Tests" tab, add the following script to capture the graph ID:
+   ```javascript
+   const responseJson = pm.response.json();
+   if (responseJson.graph_id) {
+     pm.environment.set('graphId', responseJson.graph_id);
+     console.log('Graph ID set to: ' + responseJson.graph_id);
+   }
+   ```
+4. Run "List Graphs" to see all registered graphs
+5. Run "Get Graph Details" to see the details of your registered graph
+6. Run "Visualize Graph (JSON)" or "Visualize Graph (DOT)" to get visualization data
+7. Run "Delete Graph" when done testing
+
 ## Variables
 
 The collection uses the following variables:
 
 - `baseUrl`: The base URL of your API
 - `toolId`: ID of a tool (populated after creating a tool)
-- `interactionId`: ID of a human interaction (set manually after finding pending interactions)
+- `interactionId`: ID of a human interaction for step-based workflow
+- `graphInteractionId`: ID of a human interaction for graph-based workflow
 - `sessionId`: Session ID for testing interaction history
 - `threadId`: Thread ID for testing interaction history
+- `graphId`: ID of a graph orchestrator (populated after registering a graph)
 
 ## Additional Notes
 
@@ -76,3 +111,10 @@ The collection uses the following variables:
   - Update tool: PUT `/ai/tools/tool/{id}`
   - Delete tool: DELETE `/ai/tools/tool/{id}`
   - Search tools: POST `/ai/tools/search`
+- The graph orchestrator endpoints are under the `/graph` prefix:
+  - Execute graph workflow: POST `/ai/chat` (with workflow_name="graph_basic_orchestrator")
+  - Register graph: POST `/graph/register`
+  - List graphs: GET `/graph/list`
+  - Get graph details: GET `/graph/{graphId}`
+  - Visualize graph: GET `/graph/{graphId}/visualize?format=json|dot`
+  - Delete graph: DELETE `/graph/{graphId}`

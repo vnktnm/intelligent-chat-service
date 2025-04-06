@@ -299,6 +299,244 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "Graph Orchestrator",
+      "item": [
+        {
+          "name": "Execute Graph Workflow",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/ai/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "chat"]
+            },
+            "description": "Execute a chat with the graph-based orchestrator",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workflow_name\": \"graph_basic_orchestrator\",\n  \"user_input\": \"What is an agentic AI framework?\",\n  \"selected_sources\": [],\n  \"config\": {\n    \"thread_id\": \"graph-thread-{{$randomUUID}}\",\n    \"client_id\": \"postman-client\",\n    \"user_id\": \"postman-user\",\n    \"session_id\": \"session-{{$randomUUID}}\",\n    \"human_in_the_loop\": true\n  },\n  \"stream\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Register Graph",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/graph/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["graph", "register"]
+            },
+            "description": "Register a new graph orchestrator definition",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Custom Graph\",\n  \"description\": \"A custom graph-based workflow\",\n  \"nodes\": [\n    {\n      \"id\": \"analyzer\",\n      \"name\": \"Analyzer Node\",\n      \"dependencies\": [],\n      \"metadata\": {\n        \"description\": \"Analyzes the user input\"\n      }\n    },\n    {\n      \"id\": \"planner\",\n      \"name\": \"Planner Node\",\n      \"dependencies\": [\"analyzer\"],\n      \"metadata\": {\n        \"description\": \"Plans the response based on analysis\"\n      }\n    },\n    {\n      \"id\": \"generator\",\n      \"name\": \"Generator Node\",\n      \"dependencies\": [\"planner\"],\n      \"metadata\": {\n        \"description\": \"Generates the final response\"\n      }\n    }\n  ]\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Graphs",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/graph/list",
+              "host": ["{{baseUrl}}"],
+              "path": ["graph", "list"]
+            },
+            "description": "List all registered graph orchestrator definitions"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Graph Details",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/graph/{{graphId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["graph", "{{graphId}}"]
+            },
+            "description": "Get details about a specific graph orchestrator"
+          },
+          "response": []
+        },
+        {
+          "name": "Visualize Graph (JSON)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/graph/{{graphId}}/visualize?format=json",
+              "host": ["{{baseUrl}}"],
+              "path": ["graph", "{{graphId}}", "visualize"],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "json"
+                }
+              ]
+            },
+            "description": "Visualize a graph in JSON format"
+          },
+          "response": []
+        },
+        {
+          "name": "Visualize Graph (DOT)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/graph/{{graphId}}/visualize?format=dot",
+              "host": ["{{baseUrl}}"],
+              "path": ["graph", "{{graphId}}", "visualize"],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "dot"
+                }
+              ]
+            },
+            "description": "Visualize a graph in DOT format for Graphviz rendering"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Graph",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/graph/{{graphId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["graph", "{{graphId}}"]
+            },
+            "description": "Delete a registered graph orchestrator"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Human Interaction Tests",
+      "item": [
+        {
+          "name": "Step-based Workflow with Human Interaction",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/ai/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "chat"]
+            },
+            "description": "Test a standard workflow that triggers human-in-the-loop",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workflow_name\": \"idiscovery_orchestrator\",\n  \"user_input\": \"This is an ethical question that might require human judgment: What ethical principles should guide AI development?\",\n  \"selected_sources\": [],\n  \"config\": {\n    \"thread_id\": \"human-test-{{$randomUUID}}\",\n    \"client_id\": \"postman-client\",\n    \"user_id\": \"postman-user\",\n    \"session_id\": \"session-{{$randomUUID}}\",\n    \"human_in_the_loop\": true\n  },\n  \"stream\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Graph-based Workflow with Human Interaction",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/ai/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "chat"]
+            },
+            "description": "Test a graph-based workflow that triggers human-in-the-loop",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workflow_name\": \"graph_basic_orchestrator\",\n  \"user_input\": \"This is an ethical question that might require human judgment: What ethical principles should guide AI development?\",\n  \"selected_sources\": [],\n  \"config\": {\n    \"thread_id\": \"graph-human-test-{{$randomUUID}}\",\n    \"client_id\": \"postman-client\",\n    \"user_id\": \"postman-user\",\n    \"session_id\": \"session-{{$randomUUID}}\",\n    \"human_in_the_loop\": true\n  },\n  \"stream\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Check Pending Human Interactions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ai/human/pending",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "human", "pending"]
+            },
+            "description": "Check for any pending human interactions after running workflows"
+          },
+          "response": []
+        },
+        {
+          "name": "Submit Human Response (Step-based)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/ai/human/response",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "human", "response"]
+            },
+            "description": "Submit a human response for step-based workflow",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"interaction_id\": \"{{interactionId}}\",\n  \"response\": \"For AI development, key ethical principles should include transparency, fairness, accountability, safety, and respecting human autonomy. These principles ensure AI systems are developed responsibly.\",\n  \"metadata\": {\n    \"source\": \"postman_test\",\n    \"workflow_type\": \"step_based\"\n  }\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Submit Human Response (Graph-based)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/ai/human/response",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "human", "response"]
+            },
+            "description": "Submit a human response for graph-based workflow",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"interaction_id\": \"{{graphInteractionId}}\",\n  \"response\": \"AI development should be guided by principles of transparency, fairness, accountability, privacy protection, and human oversight to ensure responsible innovation.\",\n  \"metadata\": {\n    \"source\": \"postman_test\",\n    \"workflow_type\": \"graph_based\"\n  }\n}"
+            }
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "event": [
@@ -334,7 +572,13 @@
       "key": "interactionId",
       "value": "",
       "type": "string",
-      "description": "ID of an interaction for testing"
+      "description": "ID of an interaction for step-based workflow testing"
+    },
+    {
+      "key": "graphInteractionId",
+      "value": "",
+      "type": "string",
+      "description": "ID of an interaction for graph-based workflow testing"
     },
     {
       "key": "sessionId",
@@ -347,6 +591,12 @@
       "value": "",
       "type": "string",
       "description": "Thread ID for testing"
+    },
+    {
+      "key": "graphId",
+      "value": "",
+      "type": "string",
+      "description": "ID of a graph orchestrator for testing"
     }
   ]
 }
