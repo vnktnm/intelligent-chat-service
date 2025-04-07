@@ -35,12 +35,12 @@ class IDiscoveryOrchestrator(Orchestrator):
             )
         )
 
-        # # Step 2: planner agent
-        # self.add_step(
-        #     PlannerAgent(
-        #         name="planner_agent",
-        #         model=config.OPENAI_DEFAULT_MODEL,
-        #         require_thought=True,
-        #         request=request,
-        #     )
-        # )
+        # Step 2: planner agent
+        self.add_step(
+            PlannerAgent(
+                name="planner_agent",
+                model=config.OPENAI_DEFAULT_MODEL,
+                require_thought=True,
+                request=request,
+            )
+        )

@@ -86,10 +86,13 @@ class OpenAIService:
         temperature: float = config.OPENAI_DEFAULT_TEMPERATURE,
         max_tokens: Optional[int] = None,
         response_format: Optional[Any] = None,
+        tools: List[Dict[str, Any]] = None,
+        tool_choice: str = None,
     ) -> AsyncGenerator[str, None]:
         """
         Stream completion using OpenAI API.
         """
+        response_stream = None
         try:
             response_stream = await self.client.chat.completions.create(
                 model=model,
@@ -98,6 +101,8 @@ class OpenAIService:
                 max_tokens=max_tokens,
                 stream=True,
                 response_format=response_format,
+                tools=tools,
+                tool_choice=tool_choice,
             )
 
             async for chunk in response_stream:
@@ -114,6 +119,9 @@ class OpenAIService:
         except Exception as e:
             logger.error(f"Error in streaming completion: {str(e)}")
             yield f"data: {json.dumps({"error": e})}\n\n"
+        finally:
+            if response_stream and hasattr(response_stream, "aclose"):
+                await response_stream.aclose()
 
 
 def get_openai_service() -> OpenAIService:

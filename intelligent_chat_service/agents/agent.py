@@ -372,27 +372,31 @@ class Agent(Step):
                             "agent_id": self.agent_id,
                         },
                     )
-                    content_chunks.append(chunk)
+                    extracted_content = self.extract_content_from_sse(chunk)
+                    content_chunks.append(extracted_content)
 
                 # get the full content for conversation history
-                final_response = await openai_service.generate_completions(
-                    **kwargs, stream=False, response_format=self.response_format
-                )
-                content = final_response["choices"][0]["message"]["content"]
+                content = "".join(content_chunks)
             else:
-                content = response["choices"][0]["message"]["content"]
-                content_chunks = [content]
+                content_chunks = []
 
-                await callback(
-                    "content_chunk",
-                    {
-                        "chunk": content,
-                        "agent": self.name,
-                        "role": self.role,
-                        "agent_id": self.agent_id,
-                    },
-                )
+                async for chunk in openai_service.stream_completion(
+                    **kwargs, response_format=self.response_format
+                ):
+                    await callback(
+                        "content_chunk",
+                        {
+                            "chunk": chunk,
+                            "agent": self.name,
+                            "role": self.role,
+                            "agent_id": self.agent_id,
+                        },
+                    )
+                    extracted_content = self.extract_content_from_sse(chunk)
+                    content_chunks.append(extracted_content)
 
+                # get the full content for conversation history
+                content = "".join(content_chunks)
             await callback(
                 "content_end",
                 {
@@ -588,3 +592,16 @@ class Agent(Step):
             error_msg = f"An unexpected error occurred: {str(e)}"
             logger.error(error_msg)
             return error_msg
+
+    def extract_content_from_sse(self, sse_chunk: str) -> str:
+        try:
+            if sse_chunk.startswith("data: "):
+                json_str = sse_chunk[6:]
+                chunk = json.loads(json_str)
+
+                if "content" in chunk:
+                    return chunk["content"]
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            logger.debug(f"Error extracting content from SSE chunk: {e}")
+
+        return ""
