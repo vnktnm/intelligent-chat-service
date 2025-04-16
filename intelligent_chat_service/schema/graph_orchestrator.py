@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional, Callable, List, Set
+from typing import Dict, Any, Optional, Callable, List, Set, Union
 from dataclasses import dataclass, field
 from enum import Enum
 from schema.orchestrator import Step
@@ -26,6 +26,15 @@ class ExecutionStats:
 
 
 @dataclass
+class ConditionalEdge:
+    """Definition of a conditional edge between nodes."""
+
+    target_node: str
+    condition: Callable[[Dict[str, Any]], bool]
+    description: str = ""
+
+
+@dataclass
 class GraphNodeDefinition:
     """Definition of a node in the orchestration graph."""
 
@@ -34,6 +43,7 @@ class GraphNodeDefinition:
     dependencies: List[str] = field(default_factory=list)
     condition: Optional[Callable[[Dict[str, Any]], bool]] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    conditional_edges: List[ConditionalEdge] = field(default_factory=list)
 
 
 @dataclass
@@ -49,6 +59,7 @@ class GraphNode:
     condition: Optional[Callable[[Dict[str, Any]], bool]] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     result: Any = None
+    conditional_edges: List[ConditionalEdge] = field(default_factory=list)
 
 
 @dataclass
@@ -62,6 +73,7 @@ class GraphExecutionState:
     error: Set[str] = field(default_factory=set)
     skipped: Set[str] = field(default_factory=set)
     execution_order: List[str] = field(default_factory=list)
+    conditional_activations: Dict[str, List[str]] = field(default_factory=dict)
 
 
 @dataclass

@@ -7,8 +7,10 @@ import logging
 import config
 import contextvars
 
-# Create a context variable to store request IDs
+# Create context variables to store request, thread, and session IDs
 request_id_var = contextvars.ContextVar("request_id", default=None)
+thread_id_var = contextvars.ContextVar("thread_id", default=None)
+session_id_var = contextvars.ContextVar("session_id", default=None)
 
 
 def set_request_id(request_id):
@@ -19,6 +21,26 @@ def set_request_id(request_id):
 def get_request_id():
     """Get the request ID from the current context"""
     return request_id_var.get()
+
+
+def set_thread_id(thread_id):
+    """Set the thread ID in the current context"""
+    thread_id_var.set(thread_id)
+
+
+def get_thread_id():
+    """Get the thread ID from the current context"""
+    return thread_id_var.get()
+
+
+def set_session_id(session_id):
+    """Set the session ID in the current context"""
+    session_id_var.set(session_id)
+
+
+def get_session_id():
+    """Get the session ID from the current context"""
+    return session_id_var.get()
 
 
 class InterceptHandler(logging.Handler):
@@ -69,10 +91,18 @@ class JsonSink:
             "thread_id": record["thread"].id,
         }
 
-        # Include request_id if available in the context
+        # Include context IDs if available
         request_id = get_request_id()
         if request_id is not None:
             log_data["request_id"] = request_id
+
+        thread_id = get_thread_id()
+        if thread_id is not None:
+            log_data["thread_id"] = thread_id
+
+        session_id = get_session_id()
+        if session_id is not None:
+            log_data["session_id"] = session_id
 
         # Include exception info if available
         if record["exception"]:

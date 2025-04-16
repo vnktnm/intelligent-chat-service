@@ -1,0 +1,81 @@
+# Example graph with conditional edges
+name: Advanced Analysis Workflow
+description: A workflow with conditional routing based on analysis results
+
+nodes:
+  - id: analyzer
+    dependencies: []
+    metadata:
+      description: "Analyzes user input and determines complexity"
+    agent:
+      type: AnalyzerAgent
+      name: analyzer_agent
+      model: gpt-4o-mini
+      require_thought: true
+      human_in_the_loop: false
+    conditional_edges:
+      - target: clarification
+        description: "Route to clarification if input is ambiguous"
+        condition:
+          type: field_contains
+          field: analyzer_agent_result.complexity
+          value: ambiguous
+          case_sensitive: false
+      
+      - target: planner
+        description: "Route directly to planner if input is clear"
+        condition:
+          type: complex_condition
+          operator: or
+          conditions:
+            - type: field_equals
+              field: analyzer_agent_result.complexity
+              value: simple
+            - type: field_equals
+              field: analyzer_agent_result.complexity
+              value: complex
+
+  - id: clarification
+    dependencies: [analyzer]
+    metadata:
+      description: "Clarifies ambiguous user input"
+    agent:
+      type: PlannerAgent  # Using PlannerAgent as a clarification agent
+      name: clarification_agent
+      model: gpt-4o-mini
+      require_thought: true
+    conditional_edges:
+      - target: planner
+        description: "Always go to planner after clarification"
+        condition:
+          type: python_expr
+          expression: "True"  # Always evaluate to true
+
+  - id: planner
+    dependencies: []  # No static dependencies, will be activated conditionally
+    metadata:
+      description: "Plans the response based on analysis or clarification"
+    agent:
+      type: PlannerAgent
+      name: planner_agent
+      model: gpt-4o-mini
+      require_thought: true
+
+  - id: generator
+    dependencies: [planner]
+    metadata:
+      description: "Generates the final response"
+    agent:
+      type: PlannerAgent  # Using PlannerAgent as a generator
+      name: generator_agent
+      model: gpt-4o-mini
+      require_thought: true
+    condition:
+      type: complex_condition
+      operator: and
+      conditions:
+        - type: field_contains
+          field: planner_agent_result.plan
+          value: complete
+        - type: python_expr
+          expression: "'error' not in planner_agent_result"

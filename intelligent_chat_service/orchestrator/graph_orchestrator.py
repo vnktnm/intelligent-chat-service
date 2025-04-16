@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional, Callable, Set
 import asyncio
 import time
 from datetime import datetime
+import networkx as nx
 from core import OpenAIService
 from utils import logger
 from schema import Step
@@ -12,6 +13,7 @@ from schema.graph_orchestrator import (
     GraphExecutionState,
     ExecutionStats,
     GraphSummary,
+    ConditionalEdge,
 )
 from orchestrator import Orchestrator
 
@@ -25,6 +27,8 @@ class GraphOrchestrator(Orchestrator):
         super().__init__(name, description, [])
         self.nodes: Dict[str, GraphNode] = {}
         self.execution_state = GraphExecutionState()
+        self.graph = nx.DiGraph()
+        self.dynamic_graph = nx.DiGraph()  # Graph that changes during execution
 
         # Register nodes
         if nodes:
@@ -40,10 +44,41 @@ class GraphOrchestrator(Orchestrator):
             dependents=set(),
             condition=node_def.condition,
             metadata=node_def.metadata,
+            conditional_edges=node_def.conditional_edges,
         )
         self.nodes[node_def.id] = graph_node
         self.execution_state.nodes[node_def.id] = graph_node
         self.execution_state.pending.add(node_def.id)
+
+        # Add to networkx graph
+        self.graph.add_node(node_def.id, node=graph_node)
+        self.dynamic_graph.add_node(node_def.id, node=graph_node)
+
+        # Add standard edges
+        for dep_id in node_def.dependencies:
+            # Add edge from dependency to the current node
+            self.graph.add_edge(dep_id, node_def.id)
+            self.dynamic_graph.add_edge(dep_id, node_def.id)
+
+        # Conditional edges are not added to the graph yet, as they depend on runtime conditions
+
+    def add_conditional_edge(
+        self, from_node_id: str, conditional_edge: ConditionalEdge
+    ) -> None:
+        """Add a conditional edge from a node to another node."""
+        if from_node_id not in self.nodes:
+            raise ValueError(f"Source node {from_node_id} does not exist")
+
+        if conditional_edge.target_node not in self.nodes:
+            raise ValueError(
+                f"Target node {conditional_edge.target_node} does not exist"
+            )
+
+        # Add conditional edge to the node
+        self.nodes[from_node_id].conditional_edges.append(conditional_edge)
+
+        # Note: We don't add it to self.graph as that would create a static edge
+        # Conditional edges are added dynamically to self.dynamic_graph during execution
 
     def validate_graph(self) -> bool:
         """Validate that the graph has no cycles and all dependencies exist."""
@@ -55,34 +90,30 @@ class GraphOrchestrator(Orchestrator):
                         f"Node {node_id} depends on non-existent node {dep_id}"
                     )
 
+            # Check conditional edges
+            for edge in node.conditional_edges:
+                if edge.target_node not in self.nodes:
+                    raise ValueError(
+                        f"Node {node_id} has conditional edge to non-existent node {edge.target_node}"
+                    )
+
         # Set up dependents based on dependencies
+        for node_id, node in self.nodes.items():
+            node.dependents.clear()  # Clear existing dependents
+
         for node_id, node in self.nodes.items():
             for dep_id in node.dependencies:
                 self.nodes[dep_id].dependents.add(node_id)
 
-        # Check for cycles using DFS
-        visited = set()
-        path = set()
-
-        def has_cycle(node_id):
-            if node_id in path:
-                return True
-            if node_id in visited:
-                return False
-            visited.add(node_id)
-            path.add(node_id)
-            for dep_id in self.nodes[node_id].dependents:
-                if has_cycle(dep_id):
-                    return True
-            path.remove(node_id)
-            return False
-
-        for node_id in self.nodes:
-            if node_id not in visited:
-                if has_cycle(node_id):
-                    raise ValueError(
-                        f"Cycle detected in graph involving node {node_id}"
-                    )
+        # Check for cycles using networkx in the static graph
+        try:
+            cycles = list(nx.simple_cycles(self.graph))
+            if cycles:
+                cycle_str = " -> ".join(cycles[0] + [cycles[0][0]])
+                raise ValueError(f"Cycle detected in graph: {cycle_str}")
+        except nx.NetworkXNoCycle:
+            # No cycles found - this is good
+            pass
 
         return True
 
@@ -91,13 +122,65 @@ class GraphOrchestrator(Orchestrator):
         ready_nodes = set()
         for node_id in self.execution_state.pending:
             node = self.nodes[node_id]
-            if all(
+            deps_satisfied = all(
                 dep_id in self.execution_state.completed
                 or dep_id in self.execution_state.skipped
                 for dep_id in node.dependencies
-            ):
+            )
+
+            # Also check that any activated conditional dependencies are satisfied
+            conditional_deps = self.execution_state.conditional_activations.get(
+                node_id, []
+            )
+            conditional_deps_satisfied = all(
+                dep_id in self.execution_state.completed
+                or dep_id in self.execution_state.skipped
+                for dep_id in conditional_deps
+            )
+
+            if deps_satisfied and conditional_deps_satisfied:
                 ready_nodes.add(node_id)
+
         return ready_nodes
+
+    def _evaluate_conditional_edges(
+        self, node_id: str, context: Dict[str, Any]
+    ) -> List[str]:
+        """Evaluate conditional edges for a node and return activated target nodes."""
+        node = self.nodes[node_id]
+        activated_edges = []
+
+        for edge in node.conditional_edges:
+            try:
+                if edge.condition(context):
+                    activated_edges.append(edge.target_node)
+                    logger.info(
+                        f"Activated conditional edge from {node_id} to {edge.target_node}"
+                    )
+
+                    # Add the edge to the dynamic graph
+                    self.dynamic_graph.add_edge(
+                        node_id, edge.target_node, conditional=True
+                    )
+
+                    # Add dependency relationship for execution ordering
+                    if (
+                        edge.target_node
+                        not in self.execution_state.conditional_activations
+                    ):
+                        self.execution_state.conditional_activations[
+                            edge.target_node
+                        ] = []
+
+                    self.execution_state.conditional_activations[
+                        edge.target_node
+                    ].append(node_id)
+            except Exception as e:
+                logger.error(
+                    f"Error evaluating condition for edge from {node_id} to {edge.target_node}: {str(e)}"
+                )
+
+        return activated_edges
 
     async def execute_node(
         self,
@@ -157,6 +240,17 @@ class GraphOrchestrator(Orchestrator):
             self.execution_state.completed.add(node_id)
             self.execution_state.execution_order.append(node_id)
 
+            # Evaluate conditional edges
+            activated_edges = self._evaluate_conditional_edges(node_id, context)
+            if activated_edges and callback:
+                await callback(
+                    "conditional_edges_activated",
+                    {
+                        "source_node": node_id,
+                        "activated_edges": activated_edges,
+                    },
+                )
+
             if callback:
                 await callback(
                     "node_completed",
@@ -164,6 +258,7 @@ class GraphOrchestrator(Orchestrator):
                         "node_id": node_id,
                         "step_name": node.step.name,
                         "duration_ms": node.stats.duration_ms,
+                        "activated_edges": activated_edges,
                     },
                 )
 
@@ -201,6 +296,9 @@ class GraphOrchestrator(Orchestrator):
 
         # Validate the graph
         self.validate_graph()
+
+        # Reset the dynamic graph for this execution
+        self.dynamic_graph = self.graph.copy()
 
         if callback:
             await callback(
@@ -296,9 +394,16 @@ class GraphOrchestrator(Orchestrator):
                 }
             )
 
-            # Add edges
+            # Add standard edges
             for dep_id in node.dependencies:
-                edges.append({"from": dep_id, "to": node_id})
+                edges.append({"from": dep_id, "to": node_id, "type": "static"})
+
+            # Add any active conditional edges from the dynamic graph
+            for u, v, data in self.dynamic_graph.edges(data=True):
+                if u == node_id and data.get("conditional", False):
+                    edges.append(
+                        {"from": u, "to": v, "type": "conditional", "active": True}
+                    )
 
         # Calculate stats
         stats = {
@@ -308,6 +413,9 @@ class GraphOrchestrator(Orchestrator):
             "completed": len(self.execution_state.completed),
             "error": len(self.execution_state.error),
             "skipped": len(self.execution_state.skipped),
+            "conditional_activations": len(
+                self.execution_state.conditional_activations
+            ),
         }
 
         return GraphSummary(nodes=nodes, edges=edges, stats=stats)
