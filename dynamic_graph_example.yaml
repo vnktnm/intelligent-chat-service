@@ -1,0 +1,27 @@
+# Example graph with dynamic task execution from planner
+name: Dynamic Task Execution Workflow
+description: A workflow that dynamically creates and executes tasks based on planner output
+
+nodes:
+  - id: analyzer
+    dependencies: []
+    metadata:
+      description: "Analyzes user input and determines intent"
+    agent:
+      type: AnalyzerAgent
+      name: analyzer_agent
+      model: gpt-4o-mini
+      require_thought: true
+      human_in_the_loop: false
+    node_type: agent
+
+  - id: planner
+    dependencies: [analyzer]
+    metadata:
+      description: "Creates a plan with specific tasks"
+    agent:
+      type: PlannerAgent
+      name: planner_agent
+      model: gpt-4o-mini
+      require_thought: true
+    node_type: planner  # This node type signals that its output will extend the graph

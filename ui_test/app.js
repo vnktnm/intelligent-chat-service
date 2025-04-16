@@ -108,6 +108,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Add CSS for new message indicator
   addNewMessageIndicatorStyle();
+
+  // Add CSS for graph events
+  const style = document.createElement('style');
+  style.textContent = `
+    .event-type-graph {
+      color: #0066cc;
+      font-weight: bold;
+    }
+  `;
+  document.head.appendChild(style);
 });
 
 // Initialize or retrieve session
@@ -463,6 +473,37 @@ function handleEvent(event, responseElement) {
         clearInterval(checkingInterval);
         checkingInterval = null;
       }
+      break;
+
+    case 'ui:graph:extended':
+      logEvent(
+        'Graph',
+        `Graph extended with ${data.new_nodes.length} new nodes from ${data.source_node}`
+      );
+      appendSystemMessage(
+        `Added ${data.new_nodes.length} new task nodes to execution plan`
+      );
+      break;
+
+    case 'ui:tool:execution_start':
+      logEvent(
+        'Tool',
+        `Executing tool ${data.tool_name} with parameters: ${JSON.stringify(
+          data.parameters
+        )}`
+      );
+      break;
+
+    case 'ui:tool:execution_complete':
+      logEvent('Tool', `Tool ${data.tool_name} execution completed`);
+      break;
+
+    case 'ui:tool:execution_error':
+      logEvent(
+        'Error',
+        `Tool ${data.tool_name} execution failed: ${data.error}`
+      );
+      appendErrorMessage(`Tool execution error: ${data.error}`);
       break;
   }
 }
@@ -910,6 +951,13 @@ function logEvent(type, data) {
     typeSpan.className = 'event-type-response';
   } else if (type === 'Error') {
     typeSpan.className = 'event-type-error';
+  } else if (
+    type === 'Graph' &&
+    typeof data === 'string' &&
+    data.includes('new task nodes')
+  ) {
+    typeSpan.className = 'event-type-graph';
+    logEntry.style.backgroundColor = '#f0f7ff'; // Light blue background
   }
 
   typeSpan.textContent = ` ${type}: `;

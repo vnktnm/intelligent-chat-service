@@ -9,6 +9,7 @@ from schema import Step
 from schema.graph_orchestrator import (
     GraphNode,
     NodeStatus,
+    NodeType,
     GraphNodeDefinition,
     GraphExecutionState,
     ExecutionStats,
@@ -16,6 +17,7 @@ from schema.graph_orchestrator import (
     ConditionalEdge,
 )
 from orchestrator import Orchestrator
+from utils.planner_utils import tasks_to_graph_nodes
 
 
 class GraphOrchestrator(Orchestrator):
@@ -35,7 +37,7 @@ class GraphOrchestrator(Orchestrator):
             for node_def in nodes:
                 self.add_node(node_def)
 
-    def add_node(self, node_def: GraphNodeDefinition) -> None:
+    def add_node(self, node_def: GraphNodeDefinition, is_dynamic: bool = False) -> None:
         """Add a node to the graph orchestrator."""
         graph_node = GraphNode(
             id=node_def.id,
@@ -45,6 +47,8 @@ class GraphOrchestrator(Orchestrator):
             condition=node_def.condition,
             metadata=node_def.metadata,
             conditional_edges=node_def.conditional_edges,
+            node_type=node_def.node_type,
+            is_dynamic=is_dynamic,
         )
         self.nodes[node_def.id] = graph_node
         self.execution_state.nodes[node_def.id] = graph_node
@@ -60,7 +64,66 @@ class GraphOrchestrator(Orchestrator):
             self.graph.add_edge(dep_id, node_def.id)
             self.dynamic_graph.add_edge(dep_id, node_def.id)
 
-        # Conditional edges are not added to the graph yet, as they depend on runtime conditions
+        logger.info(
+            f"Added {'dynamic' if is_dynamic else 'static'} node: {node_def.id}"
+        )
+
+    def add_nodes(
+        self, node_defs: List[GraphNodeDefinition], is_dynamic: bool = False
+    ) -> None:
+        """Add multiple nodes to the graph orchestrator."""
+        for node_def in node_defs:
+            self.add_node(node_def, is_dynamic)
+
+        # Revalidate the graph to ensure no cycles were introduced
+        self.validate_graph()
+
+    def extend_graph_from_planner_output(
+        self, node_id: str, context: Dict[str, Any]
+    ) -> List[str]:
+        """
+        Extend the graph with nodes created from planner output.
+
+        Args:
+            node_id: ID of the planner node
+            context: Execution context with planner results
+
+        Returns:
+            List of IDs of the newly added nodes
+        """
+        node = self.nodes[node_id]
+        if node.node_type != NodeType.PLANNER:
+            logger.warning(
+                f"Node {node_id} is not a planner node, skipping graph extension"
+            )
+            return []
+
+        # Get the planner result from context
+        result_key = f"{node.step.name}_result"
+        if result_key not in context:
+            logger.warning(f"No result found for planner node {node_id}")
+            return []
+
+        planner_result = context[result_key]
+
+        # Check if the result has a tasks field
+        if not isinstance(planner_result, dict) or "tasks" not in planner_result:
+            logger.warning(f"Planner result for {node_id} does not contain tasks")
+            return []
+
+        tasks = planner_result.get("tasks", [])
+        if not tasks:
+            logger.info(f"Planner {node_id} did not generate any tasks")
+            return []
+
+        # Convert tasks to graph nodes
+        graph_nodes = tasks_to_graph_nodes(tasks, parent_node_id=node_id)
+
+        # Add the nodes to the graph
+        self.add_nodes(graph_nodes, is_dynamic=True)
+
+        # Return the IDs of the newly added nodes
+        return [node.id for node in graph_nodes]
 
     def add_conditional_edge(
         self, from_node_id: str, conditional_edge: ConditionalEdge
@@ -240,6 +303,18 @@ class GraphOrchestrator(Orchestrator):
             self.execution_state.completed.add(node_id)
             self.execution_state.execution_order.append(node_id)
 
+            # If this is a planner node, extend the graph with its output
+            if node.node_type == NodeType.PLANNER:
+                new_nodes = self.extend_graph_from_planner_output(node_id, context)
+                if new_nodes and callback:
+                    await callback(
+                        "graph_extended",
+                        {
+                            "source_node": node_id,
+                            "new_nodes": new_nodes,
+                        },
+                    )
+
             # Evaluate conditional edges
             activated_edges = self._evaluate_conditional_edges(node_id, context)
             if activated_edges and callback:
@@ -391,6 +466,8 @@ class GraphOrchestrator(Orchestrator):
                     "label": node.step.name,
                     "status": node.status.value,
                     "metadata": node.metadata,
+                    "node_type": node.node_type.value,
+                    "is_dynamic": node.is_dynamic,
                 }
             )
 
@@ -416,6 +493,7 @@ class GraphOrchestrator(Orchestrator):
             "conditional_activations": len(
                 self.execution_state.conditional_activations
             ),
+            "dynamic_nodes": sum(1 for node in self.nodes.values() if node.is_dynamic),
         }
 
         return GraphSummary(nodes=nodes, edges=edges, stats=stats)
