@@ -6,6 +6,7 @@ from loguru import logger
 import logging
 import config
 import contextvars
+import socket
 
 # Create context variables to store request, thread, and session IDs
 request_id_var = contextvars.ContextVar("request_id", default=None)
@@ -69,17 +70,20 @@ class InterceptHandler(logging.Handler):
 
 class JsonSink:
     """
-    Custom sink for Loguru that formats logs as JSON
+    Custom sink for Loguru that formats logs as JSON for DataDog compatibility via FluentBit
     """
 
     def __init__(self, serialize=True, file_path=None):
         self.serialize = serialize
         self.file_path = file_path
+        self.hostname = socket.gethostname()
+        self.service_name = getattr(config, "SERVICE_NAME", "intelligent-chat-service")
+        self.env = getattr(config, "ENVIRONMENT", "development")
 
     def __call__(self, message):
         record = message.record
 
-        # Base log data with minimized fields
+        # Base log data with DataDog compatible structure
         log_data = {
             "timestamp": datetime.utcfromtimestamp(
                 record["time"].timestamp()
@@ -88,17 +92,24 @@ class JsonSink:
             "level": record["level"].name,
             "message": record["message"],
             "process_id": record["process"].id,
-            "thread_id": record["thread"].id,
+            "thread_name": record["thread"].name,
+            # DataDog specific attributes
+            "hostname": self.hostname,
+            "service": self.service_name,
+            "ddsource": "python",
+            "ddtags": f"env:{self.env}",
         }
 
         # Include context IDs if available
         request_id = get_request_id()
         if request_id is not None:
             log_data["request_id"] = request_id
+            # Add as a DataDog trace ID if appropriate
+            log_data["dd.trace_id"] = request_id
 
         thread_id = get_thread_id()
         if thread_id is not None:
-            log_data["thread_id"] = thread_id
+            log_data["chat_thread_id"] = thread_id
 
         session_id = get_session_id()
         if session_id is not None:
@@ -106,8 +117,8 @@ class JsonSink:
 
         # Include exception info if available
         if record["exception"]:
-            log_data["exception"] = str(record["exception"])
-            log_data["traceback"] = record["exception"].traceback
+            log_data["error.message"] = str(record["exception"])
+            log_data["error.stack"] = record["exception"].traceback
 
         # Include any extra attributes
         for key, value in record["extra"].items():
