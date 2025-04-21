@@ -53,10 +53,6 @@ class Agent(Step):
         if human_in_the_loop:
             self.system_prompt += self._get_human_help_instructions()
 
-    def _get_human_help_instructions(self) -> str:
-        """Get the instructions for human help requests."""
-        return "\n\nIMPORTANT: If you encounter a question or topic that requires human expertise, judgment, clarification, or when you're uncertain about something, you MUST ask for human help by including this exact format in your response: 'HUMAN_HELP_NEEDED: [your specific question]'. Be clear and concise with what you need help with."
-
     async def think(
         self, input_text: str, context: Dict[str, Any], openai_service: OpenAIService
     ) -> str:
@@ -75,6 +71,7 @@ class Agent(Step):
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             "stream": False,
+            "response_format": None,
         }
 
         if self.tools:
@@ -94,32 +91,6 @@ class Agent(Step):
         else:
             thought = response["choices"][0]["message"]["content"]
 
-        # If human-in-the-loop is enabled, check if this is a question that might benefit from human input
-        if self.human_in_the_loop:
-            human_help_indicators = [
-                "ethical",
-                "dilemma",
-                "tradeoff",
-                "balance",
-                "judgment",
-                "opinion",
-                "controversial",
-                "policy",
-                "safety concerns",
-                "innovation",
-                "decision-making",
-                "priorities conflict",
-            ]
-
-            # Check if the input contains any indicators that human help might be valuable
-            if any(
-                indicator in input_text.lower() for indicator in human_help_indicators
-            ):
-                logger.info(
-                    f"Detected potential need for human input in: {input_text[:100]}..."
-                )
-                thought += "\nThis question appears to involve ethical considerations or value judgments where human input would be valuable. I should consider asking for human assistance."
-
         logger.debug(f"Agent {self.name} thought: {thought}")
         return thought
 
@@ -134,7 +105,7 @@ class Agent(Step):
         if self.tool_calls:
             await self.load_tools()
 
-        input_text = context.get("input_text", "")
+        input_text = context.get("user_input", "")
 
         for step_name, value in context.items():
             if step_name.endswith("_output") and isinstance(value, str):
@@ -164,16 +135,19 @@ class Agent(Step):
 
         # Check for human-in-the-loop requests
         if self.human_in_the_loop and self.result:
-            help_marker = "HUMAN_HELP_NEEDED:"
-            if help_marker in self.result:
+            formatted_result = json.loads(self.result)
+            if (
+                formatted_result["type"] in ["clarification", "suggestion"]
+                and formatted_result["question"]
+            ):
                 updated_context = await self._handle_human_help_request(
-                    help_marker, context, openai_service, callback
+                    formatted_result["question"], context, openai_service, callback
                 )
                 if updated_context:
                     context = updated_context
 
         agent_info["status"] = "completed"
-        agent_info["result"] = self.result
+        agent_info["result"] = content
 
         if callback:
             await callback("step_complete", agent_info)
@@ -182,23 +156,12 @@ class Agent(Step):
 
     async def _handle_human_help_request(
         self,
-        help_marker: str,
+        question_text: str,
         context: Dict[str, Any],
         openai_service: OpenAIService,
         callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ) -> Optional[Dict[str, Any]]:
         """Handle a human help request."""
-        # Extract the question for the human
-        question_start = self.result.find(help_marker) + len(help_marker)
-        question_text = self.result[question_start:].strip()
-
-        # Truncate to first paragraph or reasonable length
-        end_markers = ["\n\n", "\n---", "\n###"]
-        for marker in end_markers:
-            pos = question_text.find(marker)
-            if pos > 0:
-                question_text = question_text[:pos].strip()
-                break
 
         # Log the detection of a human help request
         logger.info(f"Detected human help request: {question_text}")
@@ -240,7 +203,7 @@ class Agent(Step):
 
         # Create follow-up with the human's response
         if human_result["status"] == "success":
-            follow_up = f"Thank you for your help. The human has provided this response: '{human_result['response']}'. Please refine your analysis with this information."
+            follow_up = f"The human has provided this response: '{human_result['response']}'. Please refine the query with this information."
 
             # Get a refined response that incorporates the human feedback
             refined_response = await self.respond(

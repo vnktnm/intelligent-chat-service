@@ -10,6 +10,7 @@ from utils import get_orchestrator, standardize_event_type
 import uuid
 from datetime import datetime
 import config
+import traceback
 
 chat_router = APIRouter(prefix="/ai", tags=["AI"])
 
@@ -41,18 +42,6 @@ async def handle_orchestration(
         HTTPException: If an error occurs during orchestration
     """
     try:
-        # Ensure human_in_the_loop is properly initialized in config
-        if request.config:
-            # Log human_in_the_loop setting for debugging
-            logger.info(
-                f"Human in the loop setting: {request.config.human_in_the_loop}"
-            )
-        else:
-            # Create default config if not provided
-            logger.info(
-                f"No config provided, using default human_in_the_loop: {config.HUMAN_IN_THE_LOOP_ENABLED}"
-            )
-
         # Get the appropriate orchestrator for this workflow
         try:
             orchestrator = get_orchestrator(request)
@@ -105,6 +94,24 @@ async def handle_orchestration(
 
                     await queue.put(f"data: {json.dumps(event_message)}\n\n")
 
+                elif event_type in [
+                    "node_started",
+                    "node_completed",
+                    "node_error",
+                    "node_skipped",
+                ]:
+                    message_counter += 1
+                    metadata["message_id"] = f"message_{message_counter}"
+
+                    if event_type == "node_error" and "error" in data:
+                        logger.error(
+                            f"Node error in {data.get('node_id', 'unknown')}: {data['error']}"
+                        )
+                        metadata["error_details"] = traceback.format_exc()
+
+                    event_data = {"event": standard_event_type, "data": metadata}
+
+                    await queue.put(f"data: {json.dumps(event_data)}\n\n")
                 elif event_type == "step_update" or "role" in data:
                     message_counter += 1
                     metadata["agent_id"] = data.get("step")
@@ -116,19 +123,38 @@ async def handle_orchestration(
                     event_data = {"event": standard_event_type, "data": metadata}
                     await queue.put(f"data: {json.dumps(event_data)}\n\n")
 
-            orchestrator_task = asyncio.create_task(
-                orchestrator.execute(
-                    context={
-                        "input_text": request.user_input,
-                        "data_sources": request.selected_sources,
-                        "thread_id": request.config.thread_id,
-                    },
-                    openai_service=openai_service,
-                    callback=orchestrator_callback,
-                )
+            thread_id = (
+                request.config.thread_id
+                if request.config
+                else f"thread-{uuid.uuid4().hex[:8]}"
+            )
+            session_id = (
+                request.config.session_id
+                if request.config and hasattr(request.config, "session_id")
+                else None
             )
 
+            execution_context = {
+                "user_input": request.user_input,
+                "data_sources": request.selected_sources,
+                "thread_id": thread_id,
+                "session_id": session_id,
+                "request": request,
+            }
+
             try:
+                orchestrator_task = asyncio.create_task(
+                    orchestrator.execute(
+                        context={
+                            "input_text": request.user_input,
+                            "data_sources": request.selected_sources,
+                            "thread_id": request.config.thread_id,
+                        },
+                        openai_service=openai_service,
+                        callback=orchestrator_callback,
+                    )
+                )
+
                 while True:
                     try:
                         chunk = await asyncio.wait_for(queue.get(), timeout=1)
@@ -139,13 +165,45 @@ async def handle_orchestration(
                             if queue.empty():
                                 break
                         continue
+
+                if orchestrator_task.done() and orchestrator_task.exception():
+                    exception = orchestrator_task.exception()
+                    error_message = {
+                        "event": "ui:orchestrator:error",
+                        "data": {
+                            "error": str(exception),
+                            "error_details": traceback.format_exc(),
+                            "orchestration_id": orchestrator_execution_id,
+                            "timestamp": datetime.now().isoformat() + "Z",
+                        },
+                    }
+                    yield f"data: {json.dumps(error_message)}\n\n"
+                    logger.error(f"Orchestrator execution failed: {exception}")
+                    logger.error(traceback.format_exc())
+            except Exception as e:
+                logger.error(f"Error during orchestration execution: {e}")
+                logger.error(traceback.format_exc())
+                error_message = {
+                    "event": "ui:orchestrator:error",
+                    "data": {
+                        "error": str(e),
+                        "error_details": traceback.format_exc(),
+                        "orchestration_id": orchestrator_execution_id,
+                        "timestamp": datetime.now().isoformat() + "Z",
+                    },
+                }
+                yield f"data: {json.dumps(error_message)}\n\n"
+
             finally:
-                if not orchestrator_task.done():
+                if "orchestrator_task" in locals() and not orchestrator_task.done():
                     orchestrator_task.cancel()
                     try:
                         await orchestrator_task
                     except asyncio.CancelledError:
                         pass
+
+                graph_summary = None
+                graph_summary = orchestrator.get_graph_summary()
 
                 final_event = {
                     "event": "ui:orchestrator:complete",
@@ -153,8 +211,16 @@ async def handle_orchestration(
                         "name": orchestrator.name,
                         "orchestration_id": orchestrator_execution_id,
                         "timestamp": datetime.now().isoformat() + "Z",
+                        "orchestrator_type": "graph",
                     },
                 }
+
+                if graph_summary:
+                    final_event["data"]["graph_summary"] = {
+                        "nodes_count": len(graph_summary.nodes),
+                        "edges_count": len(graph_summary.edges),
+                        "stats": graph_summary.stats,
+                    }
                 yield f"data: {json.dumps(final_event)}\n\n"
 
         return StreamingResponse(
