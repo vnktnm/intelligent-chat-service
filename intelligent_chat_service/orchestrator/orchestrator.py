@@ -1,18 +1,22 @@
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Callable, Set
 from core import OpenAIService
 from utils import logger
 from schema import Step
 from agents import Agent
+import networkx as nx
+import json
 
 
 class Orchestrator:
-    """Orchestrates a sequence of steps using agents."""
+    """Base class for orchestrating steps or workflows."""
 
     def __init__(self, name: str, description: str, steps: List[Step] = None):
         self.name = name
         self.description = description
         self.steps = steps if steps else []
         self.tool_manager = None
+        self.execution_history = []
+        self.execution_id = None
 
     def add_step(self, step: Step) -> None:
         """Add a step to this workflow."""
@@ -24,16 +28,7 @@ class Orchestrator:
         openai_service: OpenAIService,
         callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ) -> Dict[str, Any]:
-        """Execute all steps in the orchestrator.
-
-        Args:
-            context (Dict[str, Any]): _description_
-            openai_service (OpenAIService): _description_
-            callback (Optional[Callable[[str, Dict[str, Any]], None]], optional): _description_. Defaults to None.
-
-        Returns:
-            Dict[str, Any]: _description_
-        """
+        """Execute all steps in the orchestrator."""
         context = dict(context)
 
         if callback:
@@ -49,6 +44,8 @@ class Orchestrator:
         logger.info(f"Starting orchestration {self.name} with {len(self.steps)} steps.")
 
         for i, step in enumerate(self.steps):
+            logger.info(f"Starting step {i+1}/{len(self.steps)}: {step.name}")
+
             if callback:
                 await callback(
                     "orchestrate_progress",
@@ -81,3 +78,11 @@ class Orchestrator:
     def cleanup(self):
         if self.tool_manager:
             self.tool_manager.close()
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert orchestrator to dictionary representation for API endpoints."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "steps": [step.name for step in self.steps],
+        }

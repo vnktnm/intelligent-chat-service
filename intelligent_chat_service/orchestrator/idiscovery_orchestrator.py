@@ -1,18 +1,19 @@
-from orchestrator import Orchestrator
+from orchestrator.graph_orchestrator import GraphOrchestrator
 from agents.analyzer_agent import AnalyzerAgent
 from agents.planner_agent import PlannerAgent
+from agents.executor_agent import ExecutorAgent
 import config
 from schema import ChatRequest
 from utils import logger
 
 
-class IDiscoveryOrchestrator(Orchestrator):
-    """Base orchestration Framework that uses a series of agents to reason and respond."""
+class IDiscoveryOrchestrator(GraphOrchestrator):
+    """Base orchestration Framework that uses a graph-based approach with analytics and reasoning capabilities."""
 
     def __init__(self, request: ChatRequest = None):
         super().__init__(
             name="IDiscovery Orchestrator",
-            description="Chatbot with analyzing and reasoning capabilities along with citations.",
+            description="Graph-based chatbot with analyzing and reasoning capabilities along with citations.",
         )
 
         # Get human-in-the-loop configuration from request if available
@@ -25,8 +26,8 @@ class IDiscoveryOrchestrator(Orchestrator):
         else:
             logger.info(f"Using default human_in_the_loop setting: {human_in_the_loop}")
 
-        # step 1: analyzer agents
-        self.add_step(
+        # Create analyzer agent node
+        analyzer_node = self.add_node(
             AnalyzerAgent(
                 name="analyzer_agent",
                 model=config.OPENAI_DEFAULT_MODEL,
@@ -35,8 +36,8 @@ class IDiscoveryOrchestrator(Orchestrator):
             )
         )
 
-        # Step 2: planner agent
-        self.add_step(
+        # Create planner agent node
+        planner_node = self.add_node(
             PlannerAgent(
                 name="planner_agent",
                 model=config.OPENAI_DEFAULT_MODEL,
@@ -44,3 +45,25 @@ class IDiscoveryOrchestrator(Orchestrator):
                 request=request,
             )
         )
+
+        # Create executor agent node
+        executor_node = self.add_node(
+            ExecutorAgent(
+                name="executor_agent",
+                model=config.OPENAI_DEFAULT_MODEL,
+                require_thought=True,
+                request=request,
+            )
+        )
+
+        # Connect analyzer to planner with a default edge
+        self.add_edge(analyzer_node, planner_node, label="analysis_complete")
+
+        # Connect planner to executor
+        self.add_edge(planner_node, executor_node, label="plan_complete")
+
+        # Store configuration for debugging/monitoring
+        self.configuration = {
+            "human_in_the_loop": human_in_the_loop,
+            "model": config.OPENAI_DEFAULT_MODEL,
+        }
