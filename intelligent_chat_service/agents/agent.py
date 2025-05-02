@@ -8,10 +8,11 @@ from utils import logger
 import json
 import aiohttp
 from datetime import datetime
+from pydantic import BaseModel
 
 
 class Agent(Step):
-    """Base class for agents."""
+    """Base class for agents that can help orchestrate workflow."""
 
     def __init__(
         self,
@@ -22,11 +23,11 @@ class Agent(Step):
         model: str = config.OPENAI_DEFAULT_MODEL,
         temperature: float = config.OPENAI_DEFAULT_TEMPERATURE,
         max_tokens: Optional[int] = None,
-        tools: List[Dict[str, Any]] = None,
+        tools: List[Dict[str, Any]] = [],
         response_format: Optional[Any] = None,
         require_thought: bool = True,
-        tool_calls: List[str] = None,
-        human_in_the_loop: bool = config.HUMAN_IN_THE_LOOP_ENABLED,
+        tool_calls: Optional[List[str]] = None,
+        human_in_the_loop: bool = config.HITL_ENABLED,
     ):
         super().__init__(name, description)
         self.role = role
@@ -34,33 +35,24 @@ class Agent(Step):
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.tools = tools or []
+        self.tools = tools
         self.tool_functions = {}
         self.conversation_history = []
-        self.human_in_the_loop = human_in_the_loop
-
-        # Initialize the tool manager
         self.tool_manager = ToolManager(config.MONGO_TOOL_COLLECTION_NAME)
-
-        # Add a unique agent id for better tracking
         self.agent_id = f"agent_{name}_{uuid.uuid4().hex[:6]}"
-
         self.response_format = response_format
         self.require_thought = require_thought
         self.tool_calls = tool_calls
-
-        # Add human-in-the-loop instruction to the prompt if enabled
-        if human_in_the_loop:
-            self.system_prompt += self._get_human_help_instructions()
+        self.human_in_the_loop = human_in_the_loop
 
     async def think(
         self, input_text: str, context: Dict[str, Any], openai_service: OpenAIService
     ) -> str:
-        """Internal reasoning process for the agent with human help detection"""
+        """Internal reasoning process for the agent."""
         messages = [
             {
                 "role": "system",
-                "content": f"{self.system_prompt}\nYou are thinking internally and you can just respond your thought and response format like JSON can be negated.",
+                "content": f"{self.system_prompt}\nYou are thinking internally and you can just respond with the thought and response format can be negated.",
             },
             {"role": "user", "content": f"Think about: {input_text}"},
         ]
@@ -76,22 +68,19 @@ class Agent(Step):
 
         if self.tools:
             kwargs["tools"] = self.tools
-            kwargs["tool_choice"] = config.OPENAI_TOOL_CHOICE
+            kwargs["tool_choice"] = "auto"
 
-        response = await openai_service.generate_completions(**kwargs)
-
-        logger.debug(f"Agent {self.name} thought: {response}")
+        response = await openai_service.generate_completion(**kwargs)
 
         if "tool_calls" in response["choices"][0]["message"]:
-            thought = "I should use tools to help with this request"
+            thought = "I should use tools to help with this request."
             tool_calls = response["choices"][0]["message"]["tool_calls"]
             for tool_call in tool_calls:
                 tool_name = tool_call["function"]["name"]
-                thought += f"I will use {tool_name} to help with this request"
+                thought += f"I'll use the {tool_name} tool."
         else:
             thought = response["choices"][0]["message"]["content"]
 
-        logger.debug(f"Agent {self.name} thought: {thought}")
         return thought
 
     async def execute(
@@ -100,32 +89,32 @@ class Agent(Step):
         openai_service: OpenAIService,
         callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ) -> Dict[str, Any]:
-        """Execute this agent with the given context."""
+        """Execute this agent with the provided context"""
 
-        if self.tool_calls:
-            await self.load_tools()
+        # todo: add a logic here so that every time if there is a hitl, it will start from here to get going with multi-round discussions.
+
+        await self.load_tools()
 
         input_text = context.get("user_input", "")
 
         for step_name, value in context.items():
             if step_name.endswith("_output") and isinstance(value, str):
-                input_text = f"{input_text}\n\nPrevious Step Output: {value}"
+                input_text = f"{input_text}\n\nPrevious step output: {value}"
 
         agent_info = {
             "step": self.name,
             "description": self.description,
             "role": self.role,
-            "status": "starting",
+            "status": "Starting",
         }
 
         if callback:
             await callback("step_update", agent_info)
 
-        logger.info(f"Executing agent {self.name} with input: {input_text}")
-
         if self.require_thought:
             thought = await self.think(input_text, context, openai_service)
-            logger.debug(f"Agent {self.name} thought: {thought}")
+            logger.info(f"Agent {self.agent_id}\nThought: {thought}")
+            # todo: handle thought streaming
 
         content = await self.respond(input_text, context, openai_service, callback)
 
@@ -133,9 +122,11 @@ class Agent(Step):
         context[f"{self.name}_output"] = content
         self.result = content
 
-        # Check for human-in-the-loop requests
+        # hitl
+        # todo: all agents having hitl should have response_format enabled.
         if self.human_in_the_loop and self.result:
             formatted_result = json.loads(self.result)
+
             if (
                 formatted_result["type"] in ["clarification", "suggestion"]
                 and formatted_result["question"]
@@ -161,61 +152,44 @@ class Agent(Step):
         openai_service: OpenAIService,
         callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Handle a human help request."""
-
-        # Log the detection of a human help request
-        logger.info(f"Detected human help request: {question_text}")
-
-        # Create a consistent interaction ID
+        """Handle HITL"""
         interaction_id = str(uuid.uuid4())
-
-        # Extract session and thread IDs from context
         session_id = None
         thread_id = None
+
         if context and "config" in context:
             config = context.get("config", {})
             session_id = config.get("session_id")
             thread_id = config.get("thread_id")
 
-        # Make sure we properly emit the human input requested event here
         if callback:
-            # Explicitly trigger the human_input_requested event with tracking info
             event_data = {
                 "agent": self.name,
                 "agent_id": self.agent_id,
                 "question": question_text,
                 "interaction_id": interaction_id,
                 "timestamp": datetime.now().isoformat() + "Z",
-                "session_id": session_id,  # Include session ID
-                "thread_id": thread_id,  # Include thread ID
+                "session_id": session_id,
+                "thread_id": thread_id,
             }
 
-            # Store event data in context so it can be used by human_interaction_service
             context["event_data"] = event_data
 
             await callback("human_input_requested", event_data)
-            logger.info(f"Emitted human_input_requested event with id {interaction_id}")
 
-        # Ask the human for help
         human_result = await self.ask_human(question_text, context, callback)
 
-        logger.info(f"Human response status: {human_result['status']}")
-
-        # Create follow-up with the human's response
         if human_result["status"] == "success":
-            follow_up = f"The human has provided this response: '{human_result['response']}'. Please refine the query with this information."
+            follow_up = f"The human has provided this response: {human_result["response"]}. Please refine the query with this information making the query valid."
 
-            # Get a refined response that incorporates the human feedback
             refined_response = await self.respond(
                 follow_up, context, openai_service, callback
             )
 
-            # Update the result
             context[self.name] = refined_response
             context[f"{self.name}_output"] = refined_response
             self.result = refined_response
 
-            # Update the agent info in case callback needs to be called
             if callback:
                 await callback(
                     "step_update",
@@ -225,6 +199,7 @@ class Agent(Step):
                         "result": refined_response,
                     },
                 )
+
             return context
         return None
 
@@ -234,8 +209,8 @@ class Agent(Step):
         context: Dict[str, Any],
         openai_service: OpenAIService,
         callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
-    ) -> str:
-        """Generate a response for the given input text."""
+    ):
+        """Generate response from the Agent."""
         messages = [{"role": "system", "content": self.system_prompt}]
 
         if self.conversation_history:
@@ -263,16 +238,15 @@ class Agent(Step):
 
         if self.tools:
             kwargs["tools"] = self.tools
-            kwargs["tool_choice"] = config.OPENAI_TOOL_CHOICE
+            kwargs["tool_choice"] = "auto"  # todo: needs configurability
 
         tool_was_used = False
         content = ""
 
         if callback:
-            response = await openai_service.generate_completions(
+            response = await openai_service.generate_completion(
                 **kwargs, stream=False, response_format=self.response_format
             )
-            logger.debug(f"Agent {self.agent_id} response: {response}")
 
             if "tool_calls" in response["choices"][0]["message"]:
                 tool_was_used = True
@@ -289,9 +263,6 @@ class Agent(Step):
                 )
 
                 for tool_call in tool_calls:
-                    logger.info(
-                        f"Agent {self.agent_id} - validating tool calls - {tool_call}"
-                    )
                     tool_result = await self.execute_tool(tool_call, context)
 
                     messages.append(
@@ -301,6 +272,7 @@ class Agent(Step):
                             "tool_calls": [tool_call],
                         }
                     )
+
                     messages.append(
                         {
                             "role": "tool",
@@ -335,10 +307,10 @@ class Agent(Step):
                             "agent_id": self.agent_id,
                         },
                     )
+
                     extracted_content = self.extract_content_from_sse(chunk)
                     content_chunks.append(extracted_content)
 
-                # get the full content for conversation history
                 content = "".join(content_chunks)
             else:
                 content_chunks = []
@@ -355,21 +327,18 @@ class Agent(Step):
                             "agent_id": self.agent_id,
                         },
                     )
+
                     extracted_content = self.extract_content_from_sse(chunk)
                     content_chunks.append(extracted_content)
 
-                # get the full content for conversation history
                 content = "".join(content_chunks)
+
             await callback(
                 "content_end",
-                {
-                    "agent": self.name,
-                    "role": self.role,
-                    "agent_id": self.agent_id,
-                },
+                {"agent": self.name, "role": self.role, "agent_id": self.agent_id},
             )
         else:
-            response = await openai_service.generate_completions(
+            response = await openai_service.generate_completion(
                 **kwargs, stream=False, response_format=self.response_format
             )
 
@@ -387,6 +356,7 @@ class Agent(Step):
                             "tool_calls": [tool_call],
                         }
                     )
+
                     messages.append(
                         {
                             "role": "tool",
@@ -396,7 +366,7 @@ class Agent(Step):
                     )
 
                 kwargs["messages"] = messages
-                final_response = await openai_service.generate_completions(
+                final_response = await openai_service.generate_completion(
                     **kwargs, stream=False, response_format=self.response_format
                 )
                 content = final_response["choices"][0]["message"]["content"]
@@ -409,7 +379,7 @@ class Agent(Step):
             tool_messages = [
                 msg
                 for msg in messages
-                if msg.get("role") in ["tool", "assistant"]
+                if msg.get("role") in ["assistant", "tool"]
                 and messages.index(msg) > len(self.conversation_history)
             ]
             self.conversation_history.extend(tool_messages)
@@ -417,7 +387,7 @@ class Agent(Step):
         self.conversation_history.append({"role": "assistant", "content": content})
 
         if len(self.conversation_history) > 10:
-            self.conversation_history = self.conversation_history[-10:]
+            self.conversation_history = self.conversation_history[:10]
 
         return content
 
@@ -427,39 +397,22 @@ class Agent(Step):
         context: Dict[str, Any],
         callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ) -> Dict[str, Any]:
-        """Ask a human for input when the agent is uncertain."""
+        """Ask Human"""
         if not self.human_in_the_loop:
-            logger.warning(
-                f"Agent {self.name} attempted to ask human but human-in-the-loop is disabled"
-            )
             return {"response": None, "status": "disabled", "interaction_id": None}
 
-        logger.info(
-            f"Agent {self.agent_id} is requesting human input for question: {question}"
-        )
-
-        # Get the human interaction service
         human_service = get_human_interaction_service()
 
-        # Request human input
         result = await human_service.request_human_input(
             agent_id=self.agent_id,
             question=question,
             context=context,
-            timeout=config.HUMAN_RESPONSE_TIMEOUT,
+            timeout=config.HITL_RESPONSE_TIMEOUT,
         )
 
-        # Ensure we have an interaction_id
         interaction_id = result.get("interaction_id")
-        logger.info(
-            f"Generated interaction_id: {interaction_id} for human input request"
-        )
 
-        # Notify that we're waiting for human input
         if callback and interaction_id:
-            logger.info(
-                f"Sending human_input_requested event with interaction_id: {interaction_id}"
-            )
             event_data = {
                 "agent": self.name,
                 "role": self.role,
@@ -467,17 +420,14 @@ class Agent(Step):
                 "question": question,
                 "interaction_id": interaction_id,
             }
-            logger.debug(f"Event data for human_input_requested: {event_data}")
 
             await callback("human_input_requested", event_data)
-            logger.info("Successfully sent human_input_requested event")
         else:
             if not callback:
-                logger.warning("No callback provided for human input request")
+                logger.warning("No callback provided for human input request.")
             if not interaction_id:
-                logger.warning("No interaction_id available for human input request")
+                logger.warning("No interaction_id available for human input request.")
 
-        # Notify about the human response if received
         if callback and result["status"] == "success" and interaction_id:
             await callback(
                 "human_input_received",
@@ -489,82 +439,96 @@ class Agent(Step):
                     "response": result["response"],
                 },
             )
-            logger.info(f"Human response received for interaction {interaction_id}")
 
         return result
 
     async def load_tools(self) -> None:
-        if len(self.tool_calls) > 0:
-            loaded_tool, tool_function = await self.tool_manager.load_tools(
-                tools=self.tool_calls
-            )
+        """Load tools"""
+        loaded_tool, tool_function = await self.tool_manager.load_tools(
+            tools=self.tool_calls
+        )
 
-            logger.info(f"Loaded tools: {loaded_tool}")
-
-            if loaded_tool:
-                self.tools.extend(loaded_tool)
-                self.tool_functions.update(tool_function)
+        if loaded_tool:
+            self.tools.extend(loaded_tool)
+            self.tool_functions.update(tool_function)
 
     async def execute_tool(
         self, tool_call: Dict[str, Any], context: Dict[str, Any]
     ) -> str:
-        """Execute a tool call and return the result."""
+        """Execute tool calls"""
         tool_name = tool_call["function"]["name"]
+
         try:
             arguments = json.loads(tool_call["function"]["arguments"])
 
+            transformed_arguments = {}
+            if isinstance(arguments, list):
+                transformed_arguments = self.transform_dicts_to_single(arguments)
+
+            tool_name = tool_name.split(".")[1]
+
             if tool_name not in self.tool_functions:
-                return f"Error: Tool {tool_name} not found."
+                return f"Error: Tool {tool_name} is not avaiable"
 
             tool_info = self.tool_functions[tool_name]
             service_url = tool_info["service_url"]
             tool_id = tool_info["tool_id"]
             metadata = tool_info.get("metadata", {})
 
-            logger.info(f"Executing tool {tool_name} with arguments: {arguments}")
-
             payload = {
                 "tool_name": tool_name,
                 "tool_id": tool_id,
-                "arguments": arguments,
+                "arguments": transformed_arguments,
                 "agent_id": self.agent_id,
                 "context": context.get("user_input", ""),
                 "metadata": metadata,
             }
 
+            transformed_arguments["user_id"] = ""  # todo: need to be removed
+
             async with aiohttp.ClientSession() as session:
-                async with session.post(service_url, json=payload) as response:
+                async with session.post(
+                    service_url, json=transformed_arguments
+                ) as response:
                     if response.status == 200:
                         result_data = await response.json()
                         result = result_data.get("result", "No result provided")
-                        return str(result)
                     else:
                         error_text = await response.text()
                         error_msg = f"API call failed with status {response.status}: {error_text}"
-                        logger.error(error_msg)
-                        return f"Error executing tool: {error_msg}"
+                        return f"Error executing tool {tool_name}: API Call Failed {error_text}"
         except aiohttp.ClientError as e:
-            error_msg = f"Network error occurred: {str(e)}"
-            logger.error(error_msg)
+            error_msg = f"Network error executing tool {tool_name}: {str(e)}"
             return error_msg
-        except json.JSONDecodeError as e:
-            error_msg = f"Error decoding JSON response: {str(e)}"
-            logger.error(error_msg)
+        except json.JSONDecoderError as e:
+            error_msg = f"Error parsing arguments for tool {tool_name}: {str(e)}"
             return error_msg
         except Exception as e:
-            error_msg = f"An unexpected error occurred: {str(e)}"
-            logger.error(error_msg)
+            error_msg = f"Error executing tool {tool_name}: {str(e)}"
             return error_msg
 
     def extract_content_from_sse(self, sse_chunk: str) -> str:
+        """Extract content from SSE formatted chunk"""
         try:
             if sse_chunk.startswith("data: "):
-                json_str = sse_chunk[6:]
+                json_str = sse_chunk[6:].strip()
                 chunk = json.loads(json_str)
 
                 if "content" in chunk:
                     return chunk["content"]
         except (json.JSONDecodeError, ValueError, KeyError) as e:
-            logger.debug(f"Error extracting content from SSE chunk: {e}")
+            logger.debug(f"Failed to parse SSE chunks: {e}")
 
         return ""
+
+    def transform_dicts_to_single(self, dicts):
+        """Transform dicts"""
+        result_dict = {}
+
+        for original_dict in dicts:
+            new_key = original_dict["key"]
+            new_value = original_dict["value"]
+
+            result_dict[new_key] = new_value
+
+        return result_dict

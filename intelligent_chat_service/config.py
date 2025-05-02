@@ -47,14 +47,18 @@ PROMPT_PATH = os.environ.get(
     "/home/venkatnm94/prototypes/agentic-ai/intelligent-chat-service/intelligent_chat_service/prompts/prompts.yaml",
 )
 PROMPT_AGENT_TYPE = os.environ.get("PROMPT_AGENT_TYPE", "agents")
-PROMPT_ANALYZER_AGENT = os.environ.get("PROMPT_ANALYZER_AGENT", "analyzer_agent")
-PROMPT_PLANNER_AGENT = os.environ.get("PROMPT_PLANNER_AGENT", "planner_agent")
+PROMPT_ANALYZER_AGENT = os.environ.get("PROMPT_ANALYZER_AGENT", "analyzer")
+PROMPT_CLARIFICATION_AGENT = os.environ.get(
+    "PROMPT_CLARIFICATION_AGENT", "clarification"
+)
+PROMPT_EXECUTOR_AGENT = os.environ.get("PROMPT_EXECUTOR_AGENT", "executor")
+PROMPT_PLANNER_AGENT = os.environ.get("PROMPT_PLANNER_AGENT", "planner")
 
 # Tools
 TOOL_QDRANT = os.environ.get("TOOL_QDRANT", "tools-qdrant")
+AVAILABLE_TOOLS = os.environ.get("AVAILABLE_TOOLS", None)
 
 # Human in the loop configuration
-HUMAN_IN_THE_LOOP_ENABLED = (
-    os.environ.get("HUMAN_IN_THE_LOOP_ENABLED", "False").lower() == "true"
-)
-HUMAN_RESPONSE_TIMEOUT = int(os.environ.get("HUMAN_RESPONSE_TIMEOUT", "300"))  # seconds
+HITL_ENABLED = os.environ.get("HITL_ENABLED", "False").lower() == "true"
+HITL_RESPONSE_TIMEOUT = int(os.environ.get("HITL_RESPONSE_TIMEOUT", "300"))  # seconds
+HITL_MAX_ROUNDS = int(os.environ.get("HITL_MAX_ROUNDS", "2"))

@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, AsyncGenerator, Any
 from fastapi.exceptions import HTTPException
 import asyncio
 import json
+from openai.lib._parsing._completions import type_to_response_format_param
 
 
 class OpenAIService:
@@ -50,7 +51,11 @@ class OpenAIService:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 stream=stream,
-                response_format=response_format,
+                response_format=(
+                    type_to_response_format_param(response_format)
+                    if response_format
+                    else None
+                ),
                 tools=tools,
                 tool_choice=tool_choice,
             )
@@ -78,6 +83,7 @@ class OpenAIService:
                 raise HTTPException(
                     status_code=401, detail=f"OpenAI API authentication error: {str(e)}"
                 )
+            raise Exception(f"Openai API Error: {str(e)}")
 
     async def stream_completion(
         self,
@@ -100,7 +106,11 @@ class OpenAIService:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 stream=True,
-                response_format=response_format,
+                response_format=(
+                    type_to_response_format_param(response_format)
+                    if response_format
+                    else None
+                ),
                 tools=tools,
                 tool_choice=tool_choice,
             )
@@ -113,7 +123,7 @@ class OpenAIService:
                     if content:
                         yield f"data: {json.dumps({"content": content})}\n\n"
 
-                        await asyncio.sleep(0.01)
+                        # await asyncio.sleep(0.01)
 
             yield f"data: {json.dumps({"done": True})}\n\n"
         except Exception as e:

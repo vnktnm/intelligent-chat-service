@@ -96,3 +96,48 @@ async def get_pending_interactions(
     """Get all pending interactions waiting for human input."""
     pending = human_service.get_pending_interactions()
     return {"interactions": pending, "count": len(pending)}
+
+
+@human_router.post("/cleanup")
+async def cleanup_interactions(
+    human_service: HumanInteractionService = Depends(get_human_interaction_service),
+):
+    """Manually trigger cleanup of completed interactions."""
+    cleaned_count = human_service.cleanup_responses()
+    return {"status": "success", "cleaned_count": cleaned_count}
+
+
+@human_router.get("/session/{session_id}")
+async def get_session_interactions(
+    session_id: str,
+    human_service: HumanInteractionService = Depends(get_human_interaction_service),
+):
+    """Get all interactions for a particular session."""
+    pending = human_service.get_pending_interactions()
+
+    # Filter interactions by session ID if stored in metadata
+    session_interactions = {
+        interaction_id: details
+        for interaction_id, details in pending.items()
+        if details.get("context", {}).get("config", {}).get("session_id") == session_id
+    }
+
+    return {"interactions": session_interactions, "count": len(session_interactions)}
+
+
+@human_router.get("/thread/{thread_id}")
+async def get_thread_interactions(
+    thread_id: str,
+    human_service: HumanInteractionService = Depends(get_human_interaction_service),
+):
+    """Get all interactions for a particular thread."""
+    pending = human_service.get_pending_interactions()
+
+    # Filter interactions by thread ID if stored in metadata
+    thread_interactions = {
+        interaction_id: details
+        for interaction_id, details in pending.items()
+        if details.get("context", {}).get("config", {}).get("thread_id") == thread_id
+    }
+
+    return {"interactions": thread_interactions, "count": len(thread_interactions)}

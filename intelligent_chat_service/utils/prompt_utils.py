@@ -32,12 +32,6 @@ def get_prompt(file_path: str, category, agent_name) -> Union[Dict[str, Any], No
                 tags = agent.get("tags", [])
                 structured_output = agent.get("structured_output", {})
 
-                if not prompt_id or not prompt_text:
-                    logger.error(
-                        f"Missing required prompt fields for agent {agent_name}"
-                    )
-                    return None
-
                 structured_output_json = json.dumps(structured_output, indent=2)
 
                 result = {
@@ -84,3 +78,37 @@ def get_formatted_prompt(prompt: str, variables: dict) -> Optional[str]:
     except Exception as e:
         logger.error(f"Error formatting prompt: {e}")
         return None
+
+
+def convert_structured_response_to_tool(response_format: str):
+    return {"type": "function", "function": asdict(Tool(json.loads(response_format)))}
+
+
+def convert_to_json_schema(data):
+    json_schema = {
+        "schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {},
+        "required": [],
+    }
+
+    type_mapping = {
+        "str": "string",
+        "list": "array",
+        "int": "integer",
+        "bool": "boolean",
+    }
+
+    for field, attributes in data.items():
+        field_type = type_mapping.get(attributes["type"], "string")
+        description = attributes["description"]
+
+        json_schema["properties"][field] = {
+            "type": field_type,
+            "description": description,
+        }
+
+        if "Mandatory" in description:
+            json_schema["required"].append(field)
+
+    return json_schema

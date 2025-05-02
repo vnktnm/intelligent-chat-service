@@ -1,6 +1,6 @@
 from core.llm.openai import get_openai_service, OpenAIService
 from core.database.mongo import MongoDBManager
-from core.human_interaction import (
+from core.hitl.hitl import (
     get_human_interaction_service,
     HumanInteractionService,
 )

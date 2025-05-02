@@ -986,6 +986,27 @@ files = [
 ]
 
 [[package]]
+name = "networkx"
+version = "3.4.2"
+description = "Python package for creating and manipulating graphs and networks"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+markers = "python_version == \"3.12\" or python_version >= \"3.13\""
+files = [
+    {file = "networkx-3.4.2-py3-none-any.whl", hash = "sha256:df5d4365b724cf81b8c6a7312509d0c22386097011ad1abe274afd5e9d3bbc5f"},
+    {file = "networkx-3.4.2.tar.gz", hash = "sha256:307c3669428c5362aab27c8a1260aa8f47c4e91d3891f48be0141738d8d053e1"},
+]
+
+[package.extras]
+default = ["matplotlib (>=3.7)", "numpy (>=1.24)", "pandas (>=2.0)", "scipy (>=1.10,!=1.11.0,!=1.11.1)"]
+developer = ["changelist (==0.5)", "mypy (>=1.1)", "pre-commit (>=3.2)", "rtoml"]
+doc = ["intersphinx-registry", "myst-nb (>=1.1)", "numpydoc (>=1.8.0)", "pillow (>=9.4)", "pydata-sphinx-theme (>=0.15)", "sphinx (>=7.3)", "sphinx-gallery (>=0.16)", "texext (>=0.6.7)"]
+example = ["cairocffi (>=1.7)", "contextily (>=1.6)", "igraph (>=0.11)", "momepy (>=0.7.2)", "osmnx (>=1.9)", "scikit-learn (>=1.5)", "seaborn (>=0.13)"]
+extra = ["lxml (>=4.6)", "pydot (>=3.0.1)", "pygraphviz (>=1.14)", "sympy (>=1.10)"]
+test = ["pytest (>=7.2)", "pytest-cov (>=4.0)"]
+
+[[package]]
 name = "numpy"
 version = "2.2.4"
 description = "Fundamental package for array computing in Python"
@@ -1053,15 +1074,15 @@ files = [
 
 [[package]]
 name = "openai"
-version = "1.70.0"
+version = "1.75.0"
 description = "The official Python library for the openai API"
 optional = false
 python-versions = ">=3.8"
 groups = ["main"]
 markers = "python_version == \"3.12\" or python_version >= \"3.13\""
 files = [
-    {file = "openai-1.70.0-py3-none-any.whl", hash = "sha256:f6438d053fd8b2e05fd6bef70871e832d9bbdf55e119d0ac5b92726f1ae6f614"},
-    {file = "openai-1.70.0.tar.gz", hash = "sha256:e52a8d54c3efeb08cf58539b5b21a5abef25368b5432965e4de88cdf4e091b2b"},
+    {file = "openai-1.75.0-py3-none-any.whl", hash = "sha256:fe6f932d2ded3b429ff67cc9ad118c71327db32eb9d32dd723de3acfca337125"},
+    {file = "openai-1.75.0.tar.gz", hash = "sha256:fb3ea907efbdb1bcfd0c44507ad9c961afd7dce3147292b54505ecfd17be8fd1"},
 ]
 
 [package.dependencies]
@@ -1076,7 +1097,7 @@ typing-extensions = ">=4.11,<5"
 
 [package.extras]
 datalib = ["numpy (>=1)", "pandas (>=1.2.3)", "pandas-stubs (>=1.1.0.11)"]
-realtime = ["websockets (>=13,<15)"]
+realtime = ["websockets (>=13,<16)"]
 voice-helpers = ["numpy (>=2.0.2)", "sounddevice (>=0.5.1)"]
 
 [[package]]
@@ -1869,4 +1890,4 @@ propcache = ">=0.2.0"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<4.0"
-content-hash = "2291d19b5a7f680406afa502ef41f9c37e2e33d7b5a513e524adab2078642e1a"
+content-hash = "1cb011640dc3383efb80bced1256c7a86209cd9a1e46699a2752c4a93f562f48"

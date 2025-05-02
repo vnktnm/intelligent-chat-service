@@ -32,7 +32,8 @@ class ToolManager:
         try:
             if not tools:
                 cursor = self.database_client.collection.find()
-            cursor = self.database_client.collection.find({"name": {"$in": tools}})
+            else:
+                cursor = self.database_client.collection.find({"name": {"$in": tools}})
 
             tools_docs = await cursor.to_list(length=100)
 
@@ -58,7 +59,7 @@ class ToolManager:
                     continue
 
                 metadata = tool_doc.get("metadata", {})
-                tool_id = str(tool_doc.get("_id"))
+                tool_id = str(tool_doc.get("_id", ""))
 
                 tool_functions[tool_name] = {
                     "service_url": service_url,

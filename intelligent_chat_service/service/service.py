@@ -41,6 +41,7 @@ async def log_requests(request: Request, call_next):
             "path": request.url.path,
             "client_ip": request.client.host,
             "user_agent": request.headers.get("user-agent", ""),
+            "request_id": request_id,
         },
     )
 
@@ -57,6 +58,7 @@ async def log_requests(request: Request, call_next):
             "path": request.url.path,
             "status_code": response.status_code,
             "duration_ms": round(duration * 1000, 2),
+            "request_id": request_id,
         },
     )
 

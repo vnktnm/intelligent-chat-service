@@ -16,8 +16,6 @@ class HumanInteractionService:
         self.human_responses = {}
         # Event to notify when a human response is received
         self.response_events = {}
-        # Debug counter to track interaction lifecycle
-        self._debug_counter = 0
 
     async def request_human_input(
         self, agent_id: str, question: str, context: Dict[str, Any], timeout: int = 300
@@ -46,7 +44,6 @@ class HumanInteractionService:
         else:
             # Generate a clean interaction ID without any prefix to avoid confusion
             interaction_id = str(uuid.uuid4())
-            self._debug_counter += 1
             logger.info(
                 f"Generated new interaction_id: {interaction_id} (#{self._debug_counter})"
             )
@@ -71,7 +68,6 @@ class HumanInteractionService:
             "context": context,
             "timestamp": datetime.now().isoformat() + "Z",
             "interaction_id": interaction_id,
-            "counter": self._debug_counter,
             "session_id": session_id,
             "thread_id": thread_id,
         }
@@ -168,8 +164,6 @@ class HumanInteractionService:
         else:
             logger.warning(f"No event found for interaction {interaction_id}")
 
-        # Now remove from pending interactions after response is processed
-        counter = self.pending_interactions[interaction_id].get("counter", 0)
         del self.pending_interactions[interaction_id]
         logger.info(
             f"Human response received and interaction {interaction_id} (#{counter}) removed from pending"

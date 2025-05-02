@@ -1,33 +1,38 @@
-from agents.agent import Agent
-from typing import Optional
+from .agent import Agent
+from typing import Optional, Literal
 import config
 from utils.prompt_utils import get_prompt
 from utils import logger
+from pydantic import BaseModel
 
 
 class AnalyzerAgent(Agent):
-    """An agent that analyzes the input and provides a response."""
+    """Analyzer Agent that analyzes user queries"""
 
     def __init__(
         self,
-        name: str,
+        name,
         model: str = config.OPENAI_DEFAULT_MODEL,
-        temperature: float = config.OPENAI_DEFAULT_TEMPERATURE,
+        temperature: float = 0.7,
         max_tokens: Optional[int] = 200,
         require_thought: Optional[bool] = False,
         human_in_the_loop: bool = False,
     ):
-        """An agent to analyze the incoming request"""
+        """Agent to analyze the incoming request"""
         prompt = get_prompt(
-            config.PROMPT_PATH, config.PROMPT_AGENT_TYPE, config.PROMPT_ANALYZER_AGENT
+            config.PROMPT_PATH, config.PROMPT_AGENTS_TYPE, config.PROMPT_ANALYZER_AGENT
         )
+
+        class AnalyzerResponse(BaseModel):
+            explanation: str
+            analysis: Literal["simple", "complex", "ambiguous"]
 
         super().__init__(
             name=name,
             description="Agent to analyze the incoming request.",
             role="analyzer",
-            system_prompt=prompt,
-            model=config.OPENAI_DEFAULT_MODEL,
+            system_prompt=prompt["prompt"],
+            model=model,
             temperature=temperature,
             response_format=AnalyzerResponse,
             require_thought=require_thought,

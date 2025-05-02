@@ -9,8 +9,8 @@ import json
 from utils import get_orchestrator, standardize_event_type
 import uuid
 from datetime import datetime
-import config
 import traceback
+import config
 
 chat_router = APIRouter(prefix="/ai", tags=["AI"])
 
@@ -42,6 +42,10 @@ async def handle_orchestration(
         HTTPException: If an error occurs during orchestration
     """
     try:
+        logger.info(
+            f"Attempting to create orchestrator workflow: {request.workflow_name}"
+        )
+
         # Get the appropriate orchestrator for this workflow
         try:
             orchestrator = get_orchestrator(request)
@@ -102,6 +106,8 @@ async def handle_orchestration(
                 ]:
                     message_counter += 1
                     metadata["message_id"] = f"message_{message_counter}"
+                    if event_type == "node_completed" and "duration_ms" in data:
+                        metadata["execution_time"] = f"{data["duration_ms"]:.2f}ms"
 
                     if event_type == "node_error" and "error" in data:
                         logger.error(
@@ -112,10 +118,11 @@ async def handle_orchestration(
                     event_data = {"event": standard_event_type, "data": metadata}
 
                     await queue.put(f"data: {json.dumps(event_data)}\n\n")
+
                 elif event_type == "step_update" or "role" in data:
                     message_counter += 1
                     metadata["agent_id"] = data.get("step")
-                    metadata["message_id"] = f"message_{message_counter}"
+                    metadata["message_id"] = f"msg_{message_counter}"
 
                     event_data = {"event": standard_event_type, "data": metadata}
                     await queue.put(f"data: {json.dumps(event_data)}\n\n")
@@ -181,19 +188,14 @@ async def handle_orchestration(
                     logger.error(f"Orchestrator execution failed: {exception}")
                     logger.error(traceback.format_exc())
             except Exception as e:
-                logger.error(f"Error during orchestration execution: {e}")
-                logger.error(traceback.format_exc())
+                logger.error(f"Error during orchestration execution: {str(e)}")
                 error_message = {
-                    "event": "ui:orchestrator:error",
-                    "data": {
-                        "error": str(e),
-                        "error_details": traceback.format_exc(),
-                        "orchestration_id": orchestrator_execution_id,
-                        "timestamp": datetime.now().isoformat() + "Z",
-                    },
+                    "error": str(exception),
+                    "error_details": traceback.format_exc(),
+                    "orchestration_id": orchestrator_execution_id,
+                    "timestamp": datetime.now().isoformat() + "Z",
                 }
                 yield f"data: {json.dumps(error_message)}\n\n"
-
             finally:
                 if "orchestrator_task" in locals() and not orchestrator_task.done():
                     orchestrator_task.cancel()
@@ -221,6 +223,7 @@ async def handle_orchestration(
                         "edges_count": len(graph_summary.edges),
                         "stats": graph_summary.stats,
                     }
+
                 yield f"data: {json.dumps(final_event)}\n\n"
 
         return StreamingResponse(
