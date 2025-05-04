@@ -48,7 +48,6 @@ class IdiscoveryGraphOrchestrator(GraphOrchestrator):
                 name="executor_agent",
                 model=config.OPENAI_DEFAULT_MODEL,
                 require_thought=True,
-                request=request,
             )
 
             def is_request_clear(context):
@@ -69,7 +68,7 @@ class IdiscoveryGraphOrchestrator(GraphOrchestrator):
                 clarification_result = json.loads(
                     context.get("clarification_agent_output", {})
                 )
-                return clarification_agent["valid"]
+                return clarification_result["valid"]
 
             analyzer_node = GraphNodeDefinition(
                 id="analyzer",
@@ -108,7 +107,7 @@ class IdiscoveryGraphOrchestrator(GraphOrchestrator):
                 priority=5,
                 metadata={"description": "Clarifies queries with HITL"},
                 condition=is_request_unclear,
-                ConditionalEdge=[
+                conditional_edges=[
                     ConditionalEdge(
                         target_node="planner", condition=has_been_clarified, priority=10
                     )

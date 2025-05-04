@@ -23,7 +23,7 @@ class ClarificationAgent(Agent):
         """Agent to clarify if the user query is ambiguous"""
         prompt = get_prompt(
             config.PROMPT_PATH,
-            config.PROMPT_AGENTS_TYPE,
+            config.PROMPT_AGENT_TYPE,
             config.PROMPT_CLARIFICATION_AGENT,
         )
 

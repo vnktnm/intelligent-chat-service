@@ -20,7 +20,7 @@ class AnalyzerAgent(Agent):
     ):
         """Agent to analyze the incoming request"""
         prompt = get_prompt(
-            config.PROMPT_PATH, config.PROMPT_AGENTS_TYPE, config.PROMPT_ANALYZER_AGENT
+            config.PROMPT_PATH, config.PROMPT_AGENT_TYPE, config.PROMPT_ANALYZER_AGENT
         )
 
         class AnalyzerResponse(BaseModel):

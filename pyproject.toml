@@ -18,7 +18,9 @@ dependencies = [
     "pyyaml (>=6.0.2,<7.0.0)",
     "qdrant-client (>=1.13.3,<2.0.0)",
     "openai (>=1.66.5,<2.0.0)",
-    "networkx (>=3.4.2,<4.0.0)"
+    "networkx (>=3.4.2,<4.0.0)",
+    "fitz (>=0.0.1.dev2,<0.0.2)",
+    "sentence-transformers (>=4.1.0,<5.0.0)"
 ]
 
 

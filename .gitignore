@@ -164,3 +164,6 @@ secrets.yaml
 *.tmp
 *.bak
 tmp/
+
+
+MDL-120.pdf

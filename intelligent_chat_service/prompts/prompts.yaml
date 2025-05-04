@@ -80,3 +80,8 @@ categories:
 
         Remember: The data sources are your only source of truth. If information isn't available in the provided data sources, acknowledge this limitation rather than using external knowledge.
       tags: ["agents", "planner"]
+    executor:
+      id: executor_1.0
+      prompt: |-
+        You are an expert in executing tasks and responsible for executing the planned tasks efficiently.
+      tags: ["agents", "executor"]

@@ -55,3 +55,11 @@ The service uses an orchestrator pattern to coordinate different AI agents:
 ## Troubleshooting
 
 If you encounter errors, check the logs at `logs/app.log` for detailed information.
+
+## PDF Ingestion
+
+#### Example PDF Upload
+
+```bash
+python rag/ingestion/ingestion.py /home/venkatnm94/prototypes/agentic-ai/intelligent-chat-service/MDL-120.pdf
+```

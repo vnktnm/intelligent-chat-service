@@ -19,7 +19,7 @@ class PlannerAgent(Agent):
         request: ChatRequest = None,
     ):
         prompt = get_prompt(
-            config.PROMPT_PATH, config.PROMPT_AGENTS_TYPE, config.PROMPT_PLANNER_AGENT
+            config.PROMPT_PATH, config.PROMPT_AGENT_TYPE, config.PROMPT_PLANNER_AGENT
         )
         formatted_prompt = get_formatted_prompt(
             prompt=prompt["prompt"],
