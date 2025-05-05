@@ -167,3 +167,6 @@ tmp/
 
 
 MDL-120.pdf
+
+models_cache
+static

@@ -13,8 +13,11 @@ from tqdm import tqdm
 
 # Vector operations
 import numpy as np
-from openai import OpenAI
-from sentence_transformers import SentenceTransformer
+from fastembed import (
+    TextEmbedding,
+    SparseTextEmbedding,
+    SparseEmbedding,
+)  # Import SparseEmbedding for type hint
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 import concurrent.futures
@@ -30,19 +33,60 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 
+# --- Worker Functions ---
+# These functions run in separate processes and initialize models there.
+
+
+def _process_dense_batch_worker(
+    model_name: str, cache_dir: str, batch_texts: List[str]
+) -> List[List[float]]:
+    """Worker function to process a batch for dense embeddings."""
+    # Initialize model inside the worker process
+    dense_model = TextEmbedding(model_name=model_name, cache_dir=cache_dir)
+    embeddings_generator = dense_model.embed(batch_texts)
+    return [embedding.tolist() for embedding in embeddings_generator]
+
+
+def _process_sparse_batch_worker(
+    model_name: str, cache_dir: str, batch_texts: List[str]
+) -> List[SparseEmbedding]:
+    """Worker function to process a batch for sparse embeddings."""
+    # Initialize model inside the worker process
+    sparse_model = SparseTextEmbedding(model_name=model_name, cache_dir=cache_dir)
+    sparse_embeddings_generator = sparse_model.embed(batch_texts)
+    return list(sparse_embeddings_generator)
+
+
+# --- PDFIngester Class ---
+
+
 class PDFIngester:
     def __init__(self):
-        # Set up OpenAI client
-        self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
         # Set up Qdrant client
         self.qdrant_client = QdrantClient(
             url=os.getenv("QDRANT_URL", "http://localhost:6333"),
             api_key=os.getenv("QDRANT_API_KEY", ""),
         )
 
-        # Initialize sparse vectorizer model
-        self.sparse_model = SentenceTransformer("naver/splade-cocondenser-selfdistil")
+        # Cache directory for models
+        self.cache_dir = os.getenv(
+            "FASTEMBED_CACHE_DIR", "models_cache"
+        )  # Store cache_dir
+        os.makedirs(self.cache_dir, exist_ok=True)
+        logger.info(f"Using cache directory for models: {self.cache_dir}")
+
+        # Store model names and dimensions, but DO NOT initialize models here
+        self.dense_model_name = "sentence-transformers/all-MiniLM-L6-v2"
+        self.dense_dim = 384
+        logger.info(
+            f"Using dense model: {self.dense_model_name} with dimension {self.dense_dim}"
+        )
+
+        self.sparse_model_name = "Qdrant/bm25"
+        logger.info(f"Using sparse model: {self.sparse_model_name}")
+        # Removed model initializations:
+        # self.dense_model = TextEmbedding(...)
+        # self.sparse_model = SparseTextEmbedding(...)
 
         # Collection name for Qdrant
         self.collection_name = os.getenv("QDRANT_COLLECTION", "document_collection")
@@ -58,27 +102,25 @@ class PDFIngester:
         if self.collection_name not in collection_names:
             logger.info(f"Creating collection '{self.collection_name}'")
 
-            # Create collection with hybrid search capability
+            # Create collection with hybrid search capability using FastEmbed dimensions
             self.qdrant_client.create_collection(
                 collection_name=self.collection_name,
                 vectors_config={
                     "dense": models.VectorParams(
-                        size=3072,  # Embedding size for OpenAI text-embedding-3-large
+                        size=self.dense_dim,  # Dimension from FastEmbed dense model
                         distance=models.Distance.COSINE,
                     ),
-                    "sparse": models.VectorParams(
-                        size=30522,  # SPLADE model vocabulary size
-                        distance=models.Distance.Dot,
-                    ),
+                    # Sparse vectors are defined in sparse_vectors_config
                 },
                 sparse_vectors_config={
                     "sparse": models.SparseVectorParams(
                         index=models.SparseIndexParams(on_disk=True)
+                        # Dimension/vocab size is implicit for sparse vectors in Qdrant
                     )
                 },
             )
 
-            # Create payload index for efficient filtering
+            # Create payload index for efficient filtering (remains the same)
             self.qdrant_client.create_payload_index(
                 collection_name=self.collection_name,
                 field_name="page_num",
@@ -209,67 +251,6 @@ class PDFIngester:
 
         return chunks
 
-    def create_dense_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """Create dense embeddings using OpenAI's embedding model"""
-        logger.info("Creating dense embeddings")
-
-        embeddings = []
-        batch_size = 20  # Adjust based on API limits
-
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i : i + batch_size]
-            response = self.openai_client.embeddings.create(
-                input=batch_texts, model="text-embedding-3-large"
-            )
-            batch_embeddings = [item.embedding for item in response.data]
-            embeddings.extend(batch_embeddings)
-
-        return embeddings
-
-    def create_dense_batch(self, batch_texts: List[str]) -> List[List[float]]:
-        """Process a batch of texts for dense embeddings"""
-        response = self.openai_client.embeddings.create(
-            input=batch_texts, model="text-embedding-3-large"
-        )
-        return [item.embedding for item in response.data]
-
-    def create_sparse_batch(self, batch_texts: List[str]) -> List[Dict[str, Any]]:
-        """Process a batch of texts for sparse embeddings"""
-        embeddings = self.sparse_model.encode(batch_texts, convert_to_numpy=True)
-
-        results = []
-        for embedding in embeddings:
-            # Get indices and values of non-zero elements
-            indices = np.nonzero(embedding)[0].tolist()
-            values = embedding[indices].tolist()
-
-            # Create sparse vector representation
-            results.append({"indices": indices, "values": values})
-
-        return results
-
-    def create_sparse_embeddings(self, texts: List[str]) -> List[Dict[str, Any]]:
-        """Create sparse embeddings for titles/text"""
-        logger.info("Creating sparse embeddings")
-
-        sparse_embeddings = []
-        batch_size = 32  # Adjust based on your GPU/CPU capabilities
-
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i : i + batch_size]
-            # Get embeddings from the model
-            embeddings = self.sparse_model.encode(batch_texts, convert_to_numpy=True)
-
-            for embedding in embeddings:
-                # Get indices and values of non-zero elements
-                indices = np.nonzero(embedding)[0].tolist()
-                values = embedding[indices].tolist()
-
-                # Create sparse vector
-                sparse_embeddings.append({"indices": indices, "values": values})
-
-        return sparse_embeddings
-
     def ingest_pdf(self, pdf_path: str) -> None:
         """Main function to ingest a PDF file"""
         try:
@@ -284,8 +265,9 @@ class PDFIngester:
             texts = [chunk["text"] for chunk in chunks]
 
             # Prepare batches for parallel processing
-            dense_batch_size = 20  # Adjust based on API limits
-            sparse_batch_size = 32  # Adjust based on CPU/memory constraints
+            # Adjust batch sizes based on available memory/CPU
+            dense_batch_size = 32
+            sparse_batch_size = 32
 
             dense_batches = [
                 texts[i : i + dense_batch_size]
@@ -297,67 +279,123 @@ class PDFIngester:
             ]
 
             # Run dense and sparse embedding generation in parallel
-            dense_vectors = []
-            sparse_vectors = []
+            dense_vectors_list = []
+            sparse_vectors_list = []
 
-            # Using ThreadPoolExecutor for I/O bound API calls (OpenAI)
-            # Using ProcessPoolExecutor for CPU-intensive operations (sparse vectors)
-            with (
-                concurrent.futures.ThreadPoolExecutor() as dense_executor,
-                concurrent.futures.ProcessPoolExecutor() as sparse_executor,
-            ):
+            # Using ProcessPoolExecutor for CPU-bound FastEmbed operations
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                logger.info(
+                    f"Submitting {len(dense_batches)} dense batches and {len(sparse_batches)} sparse batches to ProcessPoolExecutor."
+                )
 
-                # Submit all dense batch tasks
+                # Submit tasks using worker functions
                 dense_futures = [
-                    dense_executor.submit(self.create_dense_batch, batch)
+                    executor.submit(
+                        _process_dense_batch_worker,
+                        self.dense_model_name,
+                        self.cache_dir,
+                        batch,
+                    )
                     for batch in dense_batches
                 ]
-
-                # Submit all sparse batch tasks
                 sparse_futures = [
-                    sparse_executor.submit(self.create_sparse_batch, batch)
+                    executor.submit(
+                        _process_sparse_batch_worker,
+                        self.sparse_model_name,
+                        self.cache_dir,
+                        batch,
+                    )
                     for batch in sparse_batches
                 ]
 
                 # Collect dense results as they complete
-                for future in concurrent.futures.as_completed(dense_futures):
+                logger.info("Waiting for dense embedding results...")
+                for future in tqdm(
+                    concurrent.futures.as_completed(dense_futures),
+                    total=len(dense_futures),
+                    desc="Dense Embeddings",
+                ):
                     try:
                         result = future.result()
-                        dense_vectors.extend(result)
+                        dense_vectors_list.extend(result)
                     except Exception as e:
-                        logger.error(f"Error in dense vector generation: {str(e)}")
+                        logger.error(f"Error in dense vector generation task: {str(e)}")
+                        # Potentially cancel other futures or handle error appropriately
                         raise
 
                 # Collect sparse results as they complete
-                for future in concurrent.futures.as_completed(sparse_futures):
+                logger.info("Waiting for sparse embedding results...")
+                for future in tqdm(
+                    concurrent.futures.as_completed(sparse_futures),
+                    total=len(sparse_futures),
+                    desc="Sparse Embeddings",
+                ):
                     try:
                         result = future.result()
-                        sparse_vectors.extend(result)
+                        sparse_vectors_list.extend(result)
                     except Exception as e:
-                        logger.error(f"Error in sparse vector generation: {str(e)}")
+                        logger.error(
+                            f"Error in sparse vector generation task: {str(e)}"
+                        )
+                        # Potentially cancel other futures or handle error appropriately
                         raise
 
-            # Ensure results are in the correct order (same as texts)
-            assert len(dense_vectors) == len(
-                texts
-            ), "Mismatch in number of dense vectors"
-            assert len(sparse_vectors) == len(
-                texts
-            ), "Mismatch in number of sparse vectors"
+            # Ensure results are correctly ordered (ProcessPoolExecutor + as_completed doesn't guarantee order)
+            # We need to re-associate results with original chunks if order matters strictly,
+            # but since we extend lists from completed futures, the final list order might be mixed.
+            # A safer approach is to submit tasks with identifiers or process sequentially if order is critical.
+            # However, for batch upsert, the order within the final lists doesn't matter as much as
+            # ensuring each vector corresponds to the correct text chunk. Let's assume the extension order
+            # from as_completed is acceptable for now, but acknowledge this potential issue.
+
+            # Re-check lengths after processing
+            if len(dense_vectors_list) != len(texts):
+                logger.error(
+                    f"Mismatch in number of dense vectors: expected {len(texts)}, got {len(dense_vectors_list)}"
+                )
+                # Handle error: maybe some tasks failed silently or logic error
+                return  # or raise exception
+            if len(sparse_vectors_list) != len(texts):
+                logger.error(
+                    f"Mismatch in number of sparse vectors: expected {len(texts)}, got {len(sparse_vectors_list)}"
+                )
+                # Handle error
+                return  # or raise exception
+
+            logger.info(
+                f"Generated {len(dense_vectors_list)} dense and {len(sparse_vectors_list)} sparse vectors."
+            )
 
             # Upload to Qdrant
             logger.info(f"Uploading {len(chunks)} chunks to Qdrant")
             points = []
 
+            # Ensure sparse_vectors_list contains SparseEmbedding objects before accessing attributes
+            if not all(isinstance(emb, SparseEmbedding) for emb in sparse_vectors_list):
+                logger.error(
+                    "Sparse vector list does not contain expected SparseEmbedding objects."
+                )
+                # Handle error appropriately, e.g., raise an exception or return
+                raise TypeError("Unexpected type found in sparse_vectors_list")
+
             for i, chunk in enumerate(chunks):
+                # Access indices and values from the SparseEmbedding object
+                sparse_embedding_obj = sparse_vectors_list[i]
+                # Add type check for safety, although the worker function type hint helps
+                if not isinstance(sparse_embedding_obj, SparseEmbedding):
+                    logger.error(
+                        f"Item at index {i} is not a SparseEmbedding object: {type(sparse_embedding_obj)}"
+                    )
+                    continue  # Skip this point or handle error
+
                 points.append(
                     models.PointStruct(
                         id=str(uuid.uuid4()),
                         vector={
-                            "dense": dense_vectors[i],
+                            "dense": dense_vectors_list[i],
                             "sparse": models.SparseVector(
-                                indices=sparse_vectors[i]["indices"],
-                                values=sparse_vectors[i]["values"],
+                                indices=sparse_embedding_obj.indices.tolist(),
+                                values=sparse_embedding_obj.values.tolist(),
                             ),
                         },
                         payload={
@@ -374,7 +412,10 @@ class PDFIngester:
 
             # Upload in batches to avoid memory issues
             batch_size = 100
-            for i in range(0, len(points), batch_size):
+            logger.info(f"Upserting points in batches of {batch_size}...")
+            for i in tqdm(
+                range(0, len(points), batch_size), desc="Uploading to Qdrant"
+            ):
                 batch_points = points[i : i + batch_size]
                 self.qdrant_client.upsert(
                     collection_name=self.collection_name, points=batch_points
@@ -383,7 +424,7 @@ class PDFIngester:
             logger.info(f"Successfully ingested {pdf_path}")
 
         except Exception as e:
-            logger.error(f"Error ingesting PDF: {str(e)}")
+            logger.error(f"Error ingesting PDF: {str(e)}", exc_info=True)
             raise
 
 

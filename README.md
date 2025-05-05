@@ -63,3 +63,34 @@ If you encounter errors, check the logs at `logs/app.log` for detailed informati
 ```bash
 python rag/ingestion/ingestion.py /home/venkatnm94/prototypes/agentic-ai/intelligent-chat-service/MDL-120.pdf
 ```
+
+## qdrant tool
+
+# Semantic search with only the query
+
+curl -X POST http://localhost:8001/search/semantic \
+ -H "Content-Type: application/json" \
+ -d '{
+"query": "What are the main features of the product?"
+}'
+
+# Keyword search with query and custom collection name
+
+curl -X POST http://localhost:8001/search/keyword \
+ -H "Content-Type: application/json" \
+ -d '{
+"query": "technical specifications",
+"collection_name": "document_collection"
+}'
+
+# Hybrid search - simplified API with optimal defaults applied automatically
+
+curl -X POST http://localhost:8001/search/hybrid \
+ -H "Content-Type: application/json" \
+ -d '{
+"query": "NAIC rules"
+}'
+
+# Health check
+
+curl -X GET http://localhost:8001/health
