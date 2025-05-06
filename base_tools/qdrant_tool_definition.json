@@ -1,0 +1,49 @@
+{
+  "name": "qdrant_retrieval",
+  "description": "Tool for retrieving information from Qdrant vector database using semantic, keyword, and hybrid search",
+  "version": "1.0.0",
+  "arguments": [
+    {
+      "name": "query",
+      "type": "string",
+      "description": "The search query to find relevant information",
+      "required": true
+    },
+    {
+      "name": "search_type",
+      "type": "string",
+      "description": "Type of search to perform: semantic, keyword, or hybrid",
+      "required": false,
+      "default": "hybrid",
+      "enum": ["semantic", "keyword", "hybrid"]
+    },
+    {
+      "name": "limit",
+      "type": "integer",
+      "description": "Maximum number of results to return",
+      "required": false,
+      "default": 5
+    },
+    {
+      "name": "collection_name",
+      "type": "string",
+      "description": "Name of the Qdrant collection to search",
+      "required": false
+    }
+  ],
+  "capabilities": [
+    "semantic_search",
+    "keyword_search",
+    "hybrid_search",
+    "document_retrieval"
+  ],
+  "service_url": "http://localhost:8001",
+  "metadata": {
+    "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+    "sparse_model": "Qdrant/bm25",
+    "cross_encoder": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    "supports_reranking": true,
+    "context_window": 512,
+    "max_tokens": 8192
+  }
+}

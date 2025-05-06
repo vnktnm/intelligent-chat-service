@@ -5,7 +5,6 @@ from datetime import datetime
 import networkx as nx
 from core import OpenAIService
 from utils import logger
-from schema import Step
 from schema.graph_orchestrator import (
     GraphNode,
     NodeStatus,
@@ -15,16 +14,16 @@ from schema.graph_orchestrator import (
     GraphSummary,
     ConditionalEdge,
 )
-from .orchestrator import Orchestrator
 
 
-class GraphOrchestrator(Orchestrator):
+class GraphOrchestrator:
     """Orchestrates execution as a directed graph of nodes."""
 
     def __init__(
         self, name: str, description: str, nodes: List[GraphNodeDefinition] = None
     ):
-        super().__init__(name, description, [])
+        self.name = name
+        self.description = description
         self.nodes: Dict[str, GraphNode] = {}
         self.execution_state = GraphExecutionState()
         self.graph = nx.DiGraph()
@@ -60,6 +59,50 @@ class GraphOrchestrator(Orchestrator):
             # Add edge from dependency to the current node
             self.graph.add_edge(dep_id, node_def.id)
             self.dynamic_graph.add_edge(dep_id, node_def.id)
+
+    def add_edge(self, from_node_id: str, to_node_id: str) -> None:
+        """Add a standard edge between two nodes."""
+        # Verify that both nodes exist
+        if from_node_id not in self.nodes:
+            raise ValueError(f"Source node {from_node_id} does not exist")
+        if to_node_id not in self.nodes:
+            raise ValueError(f"Target node {to_node_id} does not exist")
+
+        # Add dependency relationship
+        self.nodes[to_node_id].dependencies.add(from_node_id)
+        self.nodes[from_node_id].dependents.add(to_node_id)
+
+        # Add edge to graphs
+        self.graph.add_edge(from_node_id, to_node_id)
+        self.dynamic_graph.add_edge(from_node_id, to_node_id)
+
+        logger.info(f"Added edge from {from_node_id} to {to_node_id}")
+
+    def add_conditional_edge(
+        self,
+        from_node_id: str,
+        to_node_id: str,
+        condition: Callable[[Dict[str, Any]], bool],
+        priority: int = 0,
+    ) -> None:
+        """Add a conditional edge between two nodes."""
+        # Verify that both nodes exist
+        if from_node_id not in self.nodes:
+            raise ValueError(f"Source node {from_node_id} does not exist")
+        if to_node_id not in self.nodes:
+            raise ValueError(f"Target node {to_node_id} does not exist")
+
+        # Create the conditional edge
+        edge = ConditionalEdge(
+            target_node=to_node_id, condition=condition, priority=priority
+        )
+
+        # Add to source node's conditional edges
+        self.nodes[from_node_id].conditional_edges.append(edge)
+
+        logger.info(
+            f"Added conditional edge from {from_node_id} to {to_node_id} with priority {priority}"
+        )
 
     def validate_graph(self) -> bool:
         """Validate that the graph has no cycles and all dependencies exist."""
@@ -191,7 +234,8 @@ class GraphOrchestrator(Orchestrator):
 
             if callback:
                 await callback(
-                    "node_skipped", {"node_id": node_id, "step_name": node.step.name}
+                    "node_skipped",
+                    {"node_id": node_id, "step_name": getattr(node, "name", node_id)},
                 )
             return context
 
@@ -203,13 +247,18 @@ class GraphOrchestrator(Orchestrator):
 
         if callback:
             await callback(
-                "node_started", {"node_id": node_id, "step_name": node.step.name}
+                "node_started",
+                {"node_id": node_id, "step_name": getattr(node, "name", node_id)},
             )
 
         try:
-            # Execute the step associated with this node
-            context = await node.step.execute(context, openai_service, callback)
-            node.result = context.get(f"{node.step.name}_result")
+            # Execute the step associated with this node if it exists
+            if hasattr(node, "step") and node.step:
+                context = await node.step.execute(context, openai_service, callback)
+                node.result = context.get(f"{node.step.name}_result")
+            else:
+                # If no step is defined, just continue with current context
+                node.result = None
 
             sorted_edgdes = sorted(
                 node.conditional_edges, key=lambda edge: edge.priority, reverse=True
@@ -433,5 +482,5 @@ class GraphOrchestrator(Orchestrator):
 
     def cleanup(self):
         """Clean up any resources."""
-        super().cleanup()
-        # Clean up any additional resources specific to graph orchestrator
+        # Nothing to clean up in the base implementation
+        pass

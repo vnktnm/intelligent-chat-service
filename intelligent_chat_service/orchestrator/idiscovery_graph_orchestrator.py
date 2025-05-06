@@ -1,5 +1,5 @@
 from .graph_orchestrator import GraphOrchestrator
-from schema.graph_orchestrator import GraphNodeDefinition, ConditionalEdge
+from schema.graph_orchestrator import GraphNodeDefinition
 from agents.analyzer_agent import AnalyzerAgent
 from agents.clarification_agent import ClarificationAgent
 from agents.executor_agent import ExecutorAgent
@@ -53,7 +53,7 @@ class IdiscoveryGraphOrchestrator(GraphOrchestrator):
             def is_request_clear(context):
                 analyzer_result = json.loads(context.get("analyzer_agent_output", {}))
 
-                if analyzer_result["analysis"] in ["ambiguous"]:
+                if analyzer_result["analysis"] not in ["ambiguous"]:
                     return True
                 return False
 
@@ -70,6 +70,7 @@ class IdiscoveryGraphOrchestrator(GraphOrchestrator):
                 )
                 return clarification_result["valid"]
 
+            # Create nodes first without dependencies or conditional edges
             analyzer_node = GraphNodeDefinition(
                 id="analyzer",
                 step=analyzer_agent,
@@ -78,22 +79,12 @@ class IdiscoveryGraphOrchestrator(GraphOrchestrator):
                 metadata={
                     "description": "Analyzes user input and retrieves the analysis - simple | complex | ambiguous"
                 },
-                conditional_edges=[
-                    ConditionalEdge(
-                        target_node="planner", condition=is_request_clear, priority=10
-                    ),
-                    ConditionalEdge(
-                        target_node="clarification",
-                        condition=is_request_unclear,
-                        priority=5,
-                    ),
-                ],
             )
 
             planner_node = GraphNodeDefinition(
                 id="planner",
                 step=planner_agent,
-                dependencies=["analyzer", "clarification"],
+                dependencies=[],  # We'll add these with add_edge
                 priority=5,
                 metadata={"description": "Generates a plan based on the query"},
                 condition=lambda context: is_request_clear(context)
@@ -103,34 +94,56 @@ class IdiscoveryGraphOrchestrator(GraphOrchestrator):
             clarification_node = GraphNodeDefinition(
                 id="clarification",
                 step=clarification_agent,
-                dependencies=["analyzer"],
+                dependencies=[],  # We'll add these with add_edge
                 priority=5,
                 metadata={"description": "Clarifies queries with HITL"},
                 condition=is_request_unclear,
-                conditional_edges=[
-                    ConditionalEdge(
-                        target_node="planner", condition=has_been_clarified, priority=10
-                    )
-                ],
             )
 
             execution_node = GraphNodeDefinition(
                 id="executor",
                 step=executor_agent,
-                dependencies=["planner"],
+                dependencies=[],  # We'll add these with add_edge
                 priority=5,
                 metadata={"description": "Executes the plans from the planner"},
             )
 
+            # Add nodes to the graph
             self.add_node(analyzer_node)
             self.add_node(planner_node)
             self.add_node(clarification_node)
             self.add_node(execution_node)
 
+            # Add standard edges using the new add_edge method
+            self.add_edge("analyzer", "planner")
+            self.add_edge("analyzer", "clarification")
+            self.add_edge("clarification", "planner")
+            self.add_edge("planner", "executor")
+
+            # Add conditional edges using the new add_conditional_edge method
+            self.add_conditional_edge(
+                from_node_id="analyzer",
+                to_node_id="planner",
+                condition=is_request_clear,
+                priority=10,
+            )
+            self.add_conditional_edge(
+                from_node_id="analyzer",
+                to_node_id="clarification",
+                condition=is_request_unclear,
+                priority=5,
+            )
+            self.add_conditional_edge(
+                from_node_id="clarification",
+                to_node_id="planner",
+                condition=has_been_clarified,
+                priority=10,
+            )
+
             self.validate_graph()
 
             logger.info(
-                f"Graph Orchestrator initialed with {len(self.nodes)} nodes and conditional branching"
+                f"Graph Orchestrator initialized with {len(self.nodes)} nodes and conditional branching"
             )
 
         except Exception as e:

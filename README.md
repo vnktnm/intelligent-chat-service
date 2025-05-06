@@ -94,3 +94,16 @@ curl -X POST http://localhost:8001/search/hybrid \
 # Health check
 
 curl -X GET http://localhost:8001/health
+
+# tool onboarding
+
+Usage Examples
+To register the Qdrant retrieval tool using the JSON definition:
+
+To list all registered tools:
+
+To get information about a specific tool:
+
+To delete a tool:
+
+This implementation provides a complete solution for registering, updating, and managing tool information in MongoDB which can be used by your intelligent chat service.
