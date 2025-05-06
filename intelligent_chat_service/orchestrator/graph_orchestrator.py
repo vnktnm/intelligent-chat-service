@@ -14,6 +14,7 @@ from schema.graph_orchestrator import (
     GraphSummary,
     ConditionalEdge,
 )
+import uuid
 
 
 class GraphOrchestrator:
@@ -235,7 +236,14 @@ class GraphOrchestrator:
             if callback:
                 await callback(
                     "node_skipped",
-                    {"node_id": node_id, "step_name": getattr(node, "name", node_id)},
+                    {
+                        "node_id": node_id,
+                        "step_name": (
+                            getattr(node.step, "name", node_id)
+                            if hasattr(node, "step")
+                            else node_id
+                        ),
+                    },
                 )
             return context
 
@@ -248,19 +256,39 @@ class GraphOrchestrator:
         if callback:
             await callback(
                 "node_started",
-                {"node_id": node_id, "step_name": getattr(node, "name", node_id)},
+                {
+                    "node_id": node_id,
+                    "step_name": (
+                        getattr(node.step, "name", node_id)
+                        if hasattr(node, "step")
+                        else node_id
+                    ),
+                },
             )
 
         try:
             # Execute the step associated with this node if it exists
             if hasattr(node, "step") and node.step:
-                context = await node.step.execute(context, openai_service, callback)
-                node.result = context.get(f"{node.step.name}_result")
+                # Use the execute method of any object assigned to step
+                if hasattr(node.step, "execute"):
+                    context = await node.step.execute(context, openai_service, callback)
+                    # Store result using name if available, otherwise use node_id
+                    result_key = (
+                        f"{node.step.name}_result"
+                        if hasattr(node.step, "name")
+                        else f"{node_id}_result"
+                    )
+                    node.result = context.get(result_key)
+                else:
+                    logger.warning(
+                        f"Node {node_id} has a step but it doesn't have an execute method"
+                    )
+                    node.result = None
             else:
                 # If no step is defined, just continue with current context
                 node.result = None
 
-            sorted_edgdes = sorted(
+            sorted_edges = sorted(
                 node.conditional_edges, key=lambda edge: edge.priority, reverse=True
             )
 
@@ -316,7 +344,11 @@ class GraphOrchestrator:
                     "node_completed",
                     {
                         "node_id": node_id,
-                        "step_name": node.step.name,
+                        "step_name": (
+                            getattr(node.step, "name", node_id)
+                            if hasattr(node, "step")
+                            else node_id
+                        ),
                         "duration_ms": node.stats.duration_ms,
                         "activated_edges": activated_edges,
                     },
@@ -337,12 +369,87 @@ class GraphOrchestrator:
             if callback:
                 await callback(
                     "node_error",
-                    {"node_id": node_id, "step_name": node.step.name, "error": str(e)},
+                    {
+                        "node_id": node_id,
+                        "step_name": (
+                            getattr(node.step, "name", node_id)
+                            if hasattr(node, "step")
+                            else node_id
+                        ),
+                        "error": str(e),
+                    },
                 )
 
             logger.error(f"Error executing node {node_id}: {str(e)}")
 
         return context
+
+    def create_subgraph(
+        self, name: str, description: str = None
+    ) -> "GraphOrchestrator":
+        """Create a subgraph with shared context that can be executed as part of this graph."""
+        if description is None:
+            description = f"Subgraph of {self.name}: {name}"
+
+        subgraph = GraphOrchestrator(name=name, description=description)
+        subgraph.parent_graph = self
+        return subgraph
+
+    def add_subgraph(
+        self,
+        subgraph: "GraphOrchestrator",
+        entry_node_id: str = None,
+        exit_node_id: str = None,
+    ) -> None:
+        """Add a subgraph to this graph, optionally connecting it to specific entry/exit nodes."""
+        if not hasattr(subgraph, "parent_graph"):
+            subgraph.parent_graph = self
+
+        # Track the subgraphs for proper cleanup
+        if not hasattr(self, "subgraphs"):
+            self.subgraphs = []
+        self.subgraphs.append(subgraph)
+
+        # If entry and exit nodes are specified, we could add extra connections
+        # This is left as a future enhancement
+
+    def build_execution_subgraph(
+        self, tasks: List[Dict[str, Any]], task_executor_factory: Callable
+    ) -> "GraphOrchestrator":
+        """Build a subgraph for task execution from a list of task definitions.
+
+        Args:
+            tasks: List of task definitions with id, type, dependencies, etc.
+            task_executor_factory: A function that creates a task executor for each task
+
+        Returns:
+            A configured execution subgraph
+        """
+        graph_id = f"exec_{uuid.uuid4().hex[:6]}"
+        subgraph = self.create_subgraph(
+            name=graph_id, description=f"Execution subgraph for {len(tasks)} tasks"
+        )
+
+        # Add task nodes to the subgraph
+        for task in tasks:
+            task_id = task.get("id")
+            dependencies = task.get("dependencies", [])
+
+            # Create task executor using the provided factory
+            task_executor = task_executor_factory(task)
+
+            # Create and add the node
+            task_node = GraphNodeDefinition(
+                id=task_id,
+                step=task_executor,
+                dependencies=dependencies,
+                priority=task.get("priority", 5),
+                metadata=task.get("metadata", {}),
+            )
+
+            subgraph.add_node(task_node)
+
+        return subgraph
 
     async def execute(
         self,
@@ -351,7 +458,14 @@ class GraphOrchestrator:
         callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ) -> Dict[str, Any]:
         """Execute the graph orchestrator."""
-        context = dict(context)
+        # Use parent's context if this is a subgraph
+        if hasattr(self, "parent_graph") and self.parent_graph is not None:
+            # We're operating as a subgraph, so we should share the context
+            logger.info(f"Executing subgraph {self.name} with shared context")
+        else:
+            # We're the main graph, create a copy of the context
+            context = dict(context)
+
         start_time = time.time()
 
         # Validate the graph
@@ -436,6 +550,11 @@ class GraphOrchestrator:
             )
 
         logger.info(f"Completed Graph Orchestrator: {self.name}. Success: {success}")
+        # Clean up any subgraphs
+        if hasattr(self, "subgraphs") and self.subgraphs:
+            for subgraph in self.subgraphs:
+                subgraph.cleanup()
+
         return context
 
     def get_graph_summary(self) -> GraphSummary:
@@ -448,7 +567,11 @@ class GraphOrchestrator:
             nodes.append(
                 {
                     "id": node_id,
-                    "label": node.step.name,
+                    "label": (
+                        getattr(node.step, "name", node_id)
+                        if hasattr(node, "step")
+                        else node_id
+                    ),
                     "status": node.status.value,
                     "metadata": node.metadata,
                 }
@@ -482,5 +605,11 @@ class GraphOrchestrator:
 
     def cleanup(self):
         """Clean up any resources."""
-        # Nothing to clean up in the base implementation
-        pass
+        # Clean up subgraphs
+        if hasattr(self, "subgraphs") and self.subgraphs:
+            for subgraph in self.subgraphs:
+                subgraph.cleanup()
+
+        # Clear references
+        if hasattr(self, "parent_graph"):
+            self.parent_graph = None
