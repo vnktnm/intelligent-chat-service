@@ -9,9 +9,6 @@ import json
 import aiohttp
 from datetime import datetime
 from pydantic import BaseModel
-from fastapi import FastAPI, Body, HTTPException, Request, Depends
-import uvicorn
-import os
 
 
 class Agent:
@@ -537,70 +534,3 @@ class Agent:
             result_dict[new_key] = new_value
 
         return result_dict
-
-    @classmethod
-    def create_service(cls, agent_class):
-        """
-        Create a FastAPI service for this agent
-        """
-        app = FastAPI(
-            title=f"{agent_class.__name__} Service",
-            description=f"API for {agent_class.__name__}",
-        )
-
-        @app.post("/execute")
-        async def execute_agent(request: Dict[str, Any] = Body(...)):
-            try:
-                context = request.get("context", {})
-                agent_name = request.get("agent_name", agent_class.__name__)
-                model = request.get("model", config.OPENAI_DEFAULT_MODEL)
-                temperature = request.get(
-                    "temperature", config.OPENAI_DEFAULT_TEMPERATURE
-                )
-                max_tokens = request.get("max_tokens", config.OPENAI_MAX_TOKENS)
-                require_thought = request.get("require_thought", True)
-                human_in_the_loop = request.get(
-                    "human_in_the_loop", config.HITL_ENABLED
-                )
-
-                # Create agent instance
-                agent = agent_class(
-                    name=agent_name,
-                    model=model,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    require_thought=require_thought,
-                    human_in_the_loop=human_in_the_loop,
-                    request=context.get("request") if "request" in context else None,
-                )
-
-                # Create OpenAI service
-                from core import get_openai_service
-
-                openai_service = get_openai_service()
-
-                # Execute the agent
-                result = await agent.execute(context, openai_service)
-
-                return {
-                    "status": "success",
-                    "agent_id": agent.agent_id,
-                    "result": result,
-                    "agent_output": agent.result,
-                }
-            except Exception as e:
-                logger.error(f"Error executing agent: {str(e)}")
-                return {"status": "error", "message": str(e)}
-
-        @app.get("/health")
-        async def health_check():
-            return {"status": "healthy"}
-
-        return app
-
-    @staticmethod
-    def run_service(app, port: int = 8000):
-        """
-        Run the agent as a standalone service
-        """
-        uvicorn.run(app, host="0.0.0.0", port=port)

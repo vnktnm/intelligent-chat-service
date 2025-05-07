@@ -39,12 +39,6 @@ MONGO_REPLICA_SET = os.environ.get("MONGO_REPLICA_SET", "rs0")
 MONGO_READ_PREFERENCE = os.environ.get("MONGO_READ_PREFERENCE", "primary")
 MONGO_DATABASE_NAME = os.environ.get("MONGO_DATABASE_NAME", "intelligent_chat_service")
 MONGO_ROOT_CHAIN = os.environ.get("MONGO_ROOT_CHAIN", "root_chain.pem")
-
-# Agent service URLs
-ANALYZER_AGENT_URL = os.environ.get("ANALYZER_AGENT_URL", "http://localhost:8001")
-PLANNER_AGENT_URL = os.environ.get("PLANNER_AGENT_URL", "http://localhost:8002")
-
-# MongoDB tool collection
 MONGO_TOOL_COLLECTION_NAME = os.environ.get("MONGO_TOOL_COLLECTION_NAME", "tools")
 
 # Prompts
@@ -68,15 +62,3 @@ AVAILABLE_TOOLS = os.environ.get("AVAILABLE_TOOLS", None)
 HITL_ENABLED = os.environ.get("HITL_ENABLED", "False").lower() == "true"
 HITL_RESPONSE_TIMEOUT = int(os.environ.get("HITL_RESPONSE_TIMEOUT", "300"))  # seconds
 HITL_MAX_ROUNDS = int(os.environ.get("HITL_MAX_ROUNDS", "2"))
-
-# Kafka configuration
-USE_KAFKA_FOR_AGENTS = os.environ.get("USE_KAFKA_FOR_AGENTS", "False").lower() == "true"
-KAFKA_BOOTSTRAP_SERVERS = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
-KAFKA_REQUEST_TOPIC_PREFIX = os.environ.get(
-    "KAFKA_REQUEST_TOPIC_PREFIX", "agent-request-"
-)
-KAFKA_RESPONSE_TOPIC = os.environ.get("KAFKA_RESPONSE_TOPIC", "agent-responses")
-KAFKA_REQUEST_TIMEOUT = float(os.environ.get("KAFKA_REQUEST_TIMEOUT", "60.0"))
-KAFKA_PROCESS_ALL_MESSAGES = (
-    os.environ.get("KAFKA_PROCESS_ALL_MESSAGES", "False").lower() == "true"
-)
