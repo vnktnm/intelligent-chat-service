@@ -14,7 +14,7 @@ class OpenAIService:
 
         self.client = AsyncOpenAI(api_key=self.api_key)
 
-    async def generate_completion(
+    async def generate_completions(
         self,
         messages: List[Dict[str, Any]],
         model: str = config.OPENAI_DEFAULT_MODEL,
