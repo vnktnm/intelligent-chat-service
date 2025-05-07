@@ -14,7 +14,7 @@ import uvicorn
 import os
 
 
-class Agent(Step):
+class Agent:
     """Base class for agents that can help orchestrate workflow."""
 
     def __init__(
@@ -32,7 +32,8 @@ class Agent(Step):
         tool_calls: Optional[List[str]] = None,
         human_in_the_loop: bool = config.HITL_ENABLED,
     ):
-        super().__init__(name, description)
+        self.name = name
+        self.description = description
         self.role = role
         self.system_prompt = system_prompt
         self.model = model
@@ -47,6 +48,7 @@ class Agent(Step):
         self.require_thought = require_thought
         self.tool_calls = tool_calls
         self.human_in_the_loop = human_in_the_loop
+        self.result = None
 
     async def think(
         self, input_text: str, context: Dict[str, Any], openai_service: OpenAIService
