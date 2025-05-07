@@ -1,5 +1,5 @@
 from .agent import Agent
-from typing import Optional, Any, Callable, Dict, List
+from typing import Optional, Any, Callable
 import config
 from utils.prompt_utils import get_prompt, get_formatted_prompt
 from utils import logger
@@ -10,118 +10,149 @@ import json
 import uuid
 from orchestrator.graph_orchestrator import GraphOrchestrator
 from datetime import datetime
+from schema import Step
 
 
-class TaskExecutor:
-    """A class for executing a specific task."""
+class ExecutorSubGraph(GraphOrchestrator):
+    """A sub-graph orchestrator specifically for task execution."""
 
-    def __init__(
+    def __init__(self, name: str, parent_agent: "ExecutorAgent"):
+        super().__init__(
+            name=f"exec-subgraph-{name}", description=f"Execution sub-graph for {name}"
+        )
+        self.parent_agent = parent_agent
+        self.task_results = {}
+
+    def add_task_node(
         self,
         task_id: str,
         task_type: str,
         tool: str,
-        args: List[Any],
-        executor: "ExecutorAgent",
-    ):
-        self.name = task_id  # Name attribute for compatibility
-        self.description = f"Task: {task_id}"
-        self.task_id = task_id
-        self.task_type = task_type
-        self.tool = tool
-        self.args = args
-        self.executor = executor
-        self.status = "pending"
-        self.result = None
-        self.start_time = None
-        self.end_time = None
+        args: list[Any],
+        dependencies: list[str],
+        capabilities: list[str],
+    ) -> str:
+        """Add a task node to the execution graph"""
 
-    async def execute(
-        self,
-        context: Dict[str, Any],
-        openai_service: OpenAIService,
-        callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
-    ) -> Dict[str, Any]:
-        """Execute the task using the specified tool"""
-        self.start_time = datetime.now().isoformat()
-        self.status = "running"
+        class TaskStep(Step):
+            def __init__(
+                self,
+                task_id: str,
+                task_type: str,
+                tool: str,
+                args: list[Any],
+                executor: "ExecutorAgent",
+            ):
+                super().__init__(name=task_id, description=f"Task: {task_id}")
+                self.task_id = task_id
+                self.task_type = task_type
+                self.tool = tool
+                self.args = args
+                self.executor = executor
+                self.status = "pending"
+                self.result = None
+                self.start_time = None
+                self.end_time = None
 
-        logger.info(f"executor_agent args: {self.args}")
+            async def execute(
+                self,
+                context: dict[str, Any],
+                openai_service: OpenAIService,
+                callback: Optional[Callable[[str, dict[str, Any]], None]] = None,
+            ) -> dict[str, Any]:
+                """Agent executor"""
+                self.start_time = datetime.now().isoformat()
+                self.status = "running"
 
-        tool_call = {
-            "id": f"task_{uuid.uuid4().hex[:8]}",
-            "function": {"name": self.tool, "arguments": json.dumps(self.args)},
-        }
+                logger.info(f"executor_agent args: {self.args}")
 
-        if callback:
-            await callback(
-                "task_start",
-                {
-                    "task_id": self.task_id,
-                    "task_type": self.task_type,
-                    "tool": self.tool,
-                    "args": self.args,
-                    "status": self.status,
-                },
-            )
+                tool_call = {
+                    "id": f"task_{uuid.uuid4().hex[:8]}",
+                    "function": {"name": self.tool, "arguments": json.dumps(self.args)},
+                }
 
-        try:
-            result = await self.executor.execute_tool(tool_call, context)
+                if callback:
+                    await callback(
+                        "task_start",
+                        {
+                            "task_id": self.task_id,
+                            "task_type": self.task_type,
+                            "tool": self.tool,
+                            "args": self.args,
+                            "status": self.status,
+                        },
+                    )
 
-            context[f"task_result_{self.task_id}"] = result
-            self.executor.task_results[self.task_id] = result
-            self.result = result
-            self.status = "completed"
-            self.end_time = datetime.now().isoformat()
+                try:
+                    result = await self.executor.execute_tool(tool_call, context)
 
-            if callback:
-                await callback(
-                    "task_complete",
-                    {
-                        "task_id": self.task_id,
-                        "tool": self.tool,
-                        "result": result,
-                        "status": self.status,
-                        "execution_time": self._get_execution_time(),
-                    },
-                )
-        except Exception as e:
-            error_msg = f"Error executing task {self.task_id}: {str(e)}"
-            logger.error(error_msg)
-            self.status = "failed"
-            self.result = error_msg
-            self.end_time = datetime.now().isoformat()
+                    context[f"task_result_{self.task_id}"] = result
+                    self.executor.task_results[self.task_id] = result
+                    self.result = result
+                    self.status = "completed"
+                    self.end_time = datetime.now().isoformat()
 
-            if callback:
-                await callback(
-                    "task_error",
-                    {
-                        "task_id": self.task_id,
-                        "tool": self.tool,
+                    if callback:
+                        await callback(
+                            "task_complete",
+                            {
+                                "task_id": self.task_id,
+                                "tool": self.tool,
+                                "result": result,
+                                "status": self.status,
+                                "execution_time": self._get_execution_time(),
+                            },
+                        )
+                except Exception as e:
+                    error_msg = f"Error executing task {self.task_id}: {str(e)}"
+                    logger.error(error_msg)
+                    self.status = "failed"
+                    self.result = error_msg
+                    self.end_time = datetime.now().isoformat()
+
+                    if callback:
+                        await callback(
+                            "task_error",
+                            {
+                                "task_id": self.task_id,
+                                "tool": self.tool,
+                                "error": error_msg,
+                                "status": self.status,
+                                "execution_time": self._get_execution_time(),
+                            },
+                        )
+
+                    context[f"task_result_{self.task_id}"] = error_msg
+                    self.executor.task_results[self.task_id] = {
                         "error": error_msg,
-                        "status": self.status,
-                        "execution_time": self._get_execution_time(),
-                    },
-                )
+                        "status": "failed",
+                    }
+                return context
 
-            context[f"task_result_{self.task_id}"] = error_msg
-            self.executor.task_results[self.task_id] = {
-                "error": error_msg,
-                "status": "failed",
-            }
-        return context
+            def _get_execution_time(self) -> float:
+                if not self.start_time or not self.end_time:
+                    return 0
 
-    def _get_execution_time(self) -> float:
-        if not self.start_time or not self.end_time:
-            return 0
+                start = datetime.fromisoformat(self.start_time)
+                end = datetime.fromisoformat(self.end_time)
 
-        start = datetime.fromisoformat(self.start_time)
-        end = datetime.fromisoformat(self.end_time)
+                return (end - start).total_seconds()
 
-        return (end - start).total_seconds()
+        task_step = TaskStep(task_id, task_type, tool, args, self.parent_agent)
+
+        task_step_node = GraphNodeDefinition(
+            id=task_id,
+            step=task_step,
+            dependencies=[],
+            priority=5,
+            metadata={"capabilities": capabilities},
+        )
+
+        return self.add_node(task_step_node)
 
 
 class ExecutorAgent(Agent):
-    """An agent that analyzes and executes based on the generated plan."""
+    """An agent that analyzes the executes based on the generated plan."""
 
     def __init__(
         self,
@@ -167,39 +198,50 @@ class ExecutorAgent(Agent):
         self.current_subgraph = None
         self.task_results = {}
 
-    def create_task_executor(self, task: Dict[str, Any]) -> TaskExecutor:
-        """Factory method to create a TaskExecutor from a task definition."""
-        return TaskExecutor(
-            task_id=task.get("id"),
-            task_type=task.get("type", "tool"),
-            tool=task.get("tool", ""),
-            args=task.get("args", []),
-            executor=self,
-        )
+    async def _build_execution_graph(self, tasks: list[dict]) -> ExecutorSubGraph:
+        graph_id = f"exec_{uuid.uuid4().hex[:6]}"
+        subgraph = ExecutorSubGraph(graph_id, self)
+
+        for task in tasks:
+            task_id = task.get("id")
+            task_type = task.get("type", "tool")
+            tool = task.get("tool", "")
+            args = task.get("args", [])
+            dependencies = task.get("dependencies", [])
+            capabilities = task.get("capabilities", [])
+
+            subgraph.add_task_node(
+                task_id, task_type, tool, args, dependencies, capabilities
+            )
+
+        for task in tasks:
+            task_id = task.get("id")
+            dependencies = task.get("dependencies", [])
+
+            for dep in dependencies:
+                if dep in subgraph.steps:
+                    subgraph.graph.add_edge(dep, task_id)
+                    subgraph.dynamic_graph.add_edge(dep, task_id)
+                else:
+                    logger.warning(
+                        f"Dependencies {dep} for task {task_id} not found in graph."
+                    )
+
+        return subgraph
 
     async def execute_tasks(
         self,
-        tasks: List[Dict[str, Any]],
-        context: Dict[str, Any],
+        tasks: list[dict],
+        context: dict[str, Any],
         openai_service: OpenAIService,
-        callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
-    ) -> Dict[str, Any]:
-        """Execute a list of tasks using a subgraph"""
+        callback: Optional[Callable[[str, dict[str, Any]], None]] = None,
+    ) -> dict[str, Any]:
+        """Execute a list of tasks"""
         logger.info(f"Building execution graph for {len(tasks)} tasks")
 
         self.task_results = {}
 
-        # Get the current graph from context or create a new one
-        parent_graph = context.get(
-            "current_graph",
-            GraphOrchestrator(name="default", description="Default graph"),
-        )
-
-        # Use the enhanced build_execution_subgraph method
-        execution_graph = parent_graph.build_execution_subgraph(
-            tasks=tasks, task_executor_factory=self.create_task_executor
-        )
-
+        execution_graph = await self._build_execution_graph(tasks)
         self.current_subgraph = execution_graph
 
         if callback:
@@ -208,25 +250,17 @@ class ExecutorAgent(Agent):
                 {
                     "agent": self.name,
                     "task_count": len(tasks),
-                    "execution_id": str(uuid.uuid4()),
+                    "execution_id": (
+                        execution_graph.execution_id
+                        if hasattr(execution_graph, "execution_id")
+                        else str(uuid.uuid4())
+                    ),
                 },
             )
 
         try:
-            # Set current graph in context for proper nesting
-            previous_graph = context.get("current_graph", None)
-            context["current_graph"] = execution_graph
-
-            # Execute the subgraph
             context = await execution_graph.execute(context, openai_service, callback)
 
-            # Restore previous graph
-            if previous_graph:
-                context["current_graph"] = previous_graph
-            else:
-                context.pop("current_graph", None)
-
-            # Collect results
             results_summary = {
                 "total_tasks": len(tasks),
                 "completed_tasks": len(self.task_results),
@@ -256,11 +290,11 @@ class ExecutorAgent(Agent):
 
     async def execute(
         self,
-        context: Dict[str, Any],
+        context: dict[str, Any],
         openai_service: OpenAIService,
-        callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
-    ) -> Dict[str, Any]:
-        """Executes the executor agent - processes planner output and executes tasks"""
+        callback: Optional[Callable[[str, dict[str, Any]], None]] = None,
+    ):
+        """Executes the exector agent"""
 
         await self.load_tools()
 
@@ -271,28 +305,38 @@ class ExecutorAgent(Agent):
                 await callback(
                     "node_skipped", {"node_id": self.name, "step": self.name}
                 )
+
             return context
 
         try:
-            # Parse planner output
-            planner_data = self._parse_planner_output(planner_output)
+            if isinstance(planner_output, str):
+                try:
+                    planner_data = json.loads(planner_output)
+                except json.JSONDecodeError:
+                    logger.error("Failed to parse planner output as JSON")
+                    return context
+            else:
+                planner_data = planner_output
 
-            # Extract tasks from planner data
             tasks = planner_data.get("plan", [])
             logger.info(f"Tasks: {tasks}")
-
             if not tasks:
                 logger.info(f"No tasks found in planner output")
                 return context
 
-            # Execute the tasks
             logger.info(f"Executing {len(tasks)} tasks from planner")
             context = await self.execute_tasks(tasks, context, openai_service, callback)
 
-            # Prepare response
-            response_data = self._create_response_data(tasks)
+            response_data = {
+                "summary": f"Executed {len(self.task_results)}/{len(tasks)} tasks",
+                "execution_status": (
+                    "success"
+                    if len(self.task_results) == len(tasks)
+                    else "partial_success"
+                ),
+                "results": self.task_results,
+            }
 
-            # Update context with results
             context[self.name] = json.dumps(response_data)
             context[f"{self.name}_output"] = json.dumps(response_data)
             self.result = json.dumps(response_data)
@@ -303,24 +347,3 @@ class ExecutorAgent(Agent):
             if callback:
                 await callback("step_error", {"step": self.name, "error": str(e)})
             return context
-
-    def _parse_planner_output(self, planner_output: Any) -> Dict[str, Any]:
-        """Parse the planner output to extract task data."""
-        if isinstance(planner_output, str):
-            try:
-                return json.loads(planner_output)
-            except json.JSONDecodeError:
-                logger.error("Failed to parse planner output as JSON")
-                return {"plan": []}
-        else:
-            return planner_output
-
-    def _create_response_data(self, tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Create the response data structure based on task execution results."""
-        return {
-            "summary": f"Executed {len(self.task_results)}/{len(tasks)} tasks",
-            "execution_status": (
-                "success" if len(self.task_results) == len(tasks) else "partial_success"
-            ),
-            "results": self.task_results,
-        }
