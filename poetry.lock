@@ -1215,6 +1215,27 @@ files = [
 ]
 
 [[package]]
+name = "kafka-python"
+version = "2.2.6"
+description = "Pure Python client for Apache Kafka"
+optional = false
+python-versions = "*"
+groups = ["main"]
+markers = "python_version == \"3.12\" or python_version >= \"3.13\""
+files = [
+    {file = "kafka_python-2.2.6-py2.py3-none-any.whl", hash = "sha256:bacc5b00ddcfd79a33d761553dbf3e262389865432b51310e12399fac66f3c99"},
+    {file = "kafka_python-2.2.6.tar.gz", hash = "sha256:b18a15e614864afedd514cc75f203cc3555bb85b915326c9fce0e49a80ca441f"},
+]
+
+[package.extras]
+benchmarks = ["pyperf"]
+crc32c = ["crc32c"]
+lz4 = ["lz4"]
+snappy = ["python-snappy"]
+testing = ["mock", "pytest", "pytest-mock", "pytest-timeout"]
+zstd = ["zstandard"]
+
+[[package]]
 name = "loguru"
 version = "0.7.3"
 description = "Python logging made (stupidly) simple"
@@ -4158,4 +4179,4 @@ propcache = ">=0.2.0"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<4.0"
-content-hash = "7bc4d98d5bbfef5a8297ff7d2fe24b9114e7a6a21c8230b71d541f2e5dbd171b"
+content-hash = "fd39b47d4994eac944578b6f8801a5065c614bd2e2586fe673b70ac8b434cd92"
