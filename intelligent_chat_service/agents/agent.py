@@ -1,4 +1,3 @@
-from schema import Step
 import config
 from typing import Optional, List, Dict, Any, Callable
 from tools.tool import ToolManager
@@ -8,7 +7,6 @@ from utils import logger
 import json
 import aiohttp
 from datetime import datetime
-from pydantic import BaseModel
 
 
 class Agent:
@@ -26,8 +24,8 @@ class Agent:
         tools: List[Dict[str, Any]] = [],
         response_format: Optional[Any] = None,
         require_thought: bool = True,
-        tool_calls: Optional[List[str]] = None,
         human_in_the_loop: bool = config.HITL_ENABLED,
+        stream: Optional[bool] = False,
     ):
         self.name = name
         self.description = description
@@ -43,12 +41,16 @@ class Agent:
         self.agent_id = f"agent_{name}_{uuid.uuid4().hex[:6]}"
         self.response_format = response_format
         self.require_thought = require_thought
-        self.tool_calls = tool_calls
         self.human_in_the_loop = human_in_the_loop
         self.result = None
+        self.stream = stream
 
     async def think(
-        self, input_text: str, context: Dict[str, Any], openai_service: OpenAIService
+        self,
+        input_text: str,
+        context: Dict[str, Any],
+        openai_service: OpenAIService,
+        callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ) -> str:
         """Internal reasoning process for the agent."""
         messages = [
@@ -64,7 +66,6 @@ class Agent:
             "model": self.model,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
-            "stream": False,
             "response_format": None,
         }
 
@@ -72,18 +73,20 @@ class Agent:
             kwargs["tools"] = self.tools
             kwargs["tool_choice"] = "auto"
 
-        response = await openai_service.generate_completion(**kwargs)
+        content_chunks = []
+        async for chunk in openai_service.stream_completion(**kwargs):
+            if callback:
+                await callback(
+                    "thought_chunk",
+                    {"chunk": chunk, "agent": self.name, "agent_id": self.agent_id},
+                )
 
-        if "tool_calls" in response["choices"][0]["message"]:
-            thought = "I should use tools to help with this request."
-            tool_calls = response["choices"][0]["message"]["tool_calls"]
-            for tool_call in tool_calls:
-                tool_name = tool_call["function"]["name"]
-                thought += f"I'll use the {tool_name} tool."
-        else:
-            thought = response["choices"][0]["message"]["content"]
+            extracted_content = self.extract_content_from_sse(chunk)
+            content_chunks.append(extracted_content)
 
-        return thought
+            content = "".join(content_chunks)
+
+        return content
 
     async def execute(
         self,
@@ -95,9 +98,11 @@ class Agent:
 
         # todo: add a logic here so that every time if there is a hitl, it will start from here to get going with multi-round discussions.
 
-        await self.load_tools()
+        if hasattr(self, "tools") and isinstance(self.tools, list):
+            await self.load_tools()
 
-        input_text = context.get("user_input", "")
+        # Get input text from either "user_input" or "input_text" key
+        input_text = context.get("user_input", context.get("input_text", ""))
 
         for step_name, value in context.items():
             if step_name.endswith("_output") and isinstance(value, str):
@@ -114,7 +119,7 @@ class Agent:
             await callback("step_update", agent_info)
 
         if self.require_thought:
-            thought = await self.think(input_text, context, openai_service)
+            thought = await self.think(input_text, context, openai_service, callback)
             logger.info(f"Agent {self.agent_id}\nThought: {thought}")
             # todo: handle thought streaming
 
@@ -245,93 +250,24 @@ class Agent:
         tool_was_used = False
         content = ""
 
-        if callback:
-            response = await openai_service.generate_completion(
-                **kwargs, stream=False, response_format=self.response_format
-            )
+        if callback and self.stream:
+            content_chunks = []
 
-            if "tool_calls" in response["choices"][0]["message"]:
-                tool_was_used = True
-                tool_calls = response["choices"][0]["message"]["tool_calls"]
-
+            async for chunk in openai_service.stream_completion(
+                **kwargs, response_format=self.response_format
+            ):
                 await callback(
-                    "tool_use",
+                    "content_chunk",
                     {
+                        "chunk": chunk,
                         "agent": self.name,
                         "role": self.role,
                         "agent_id": self.agent_id,
-                        "tools": [tc["function"]["name"] for tc in tool_calls],
                     },
                 )
 
-                for tool_call in tool_calls:
-                    tool_result = await self.execute_tool(tool_call, context)
-
-                    messages.append(
-                        {
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": [tool_call],
-                        }
-                    )
-
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tool_call["id"],
-                            "content": tool_result,
-                        }
-                    )
-
-                    await callback(
-                        "tool_result",
-                        {
-                            "agent": self.name,
-                            "role": self.role,
-                            "agent_id": self.agent_id,
-                            "tool": tool_call["function"]["name"],
-                            "result": tool_result,
-                        },
-                    )
-
-                kwargs["messages"] = messages
-                content_chunks = []
-
-                async for chunk in openai_service.stream_completion(
-                    **kwargs, response_format=self.response_format
-                ):
-                    await callback(
-                        "content_chunk",
-                        {
-                            "chunk": chunk,
-                            "agent": self.name,
-                            "role": self.role,
-                            "agent_id": self.agent_id,
-                        },
-                    )
-
-                    extracted_content = self.extract_content_from_sse(chunk)
-                    content_chunks.append(extracted_content)
-
-                content = "".join(content_chunks)
-            else:
-                content_chunks = []
-
-                async for chunk in openai_service.stream_completion(
-                    **kwargs, response_format=self.response_format
-                ):
-                    await callback(
-                        "content_chunk",
-                        {
-                            "chunk": chunk,
-                            "agent": self.name,
-                            "role": self.role,
-                            "agent_id": self.agent_id,
-                        },
-                    )
-
-                    extracted_content = self.extract_content_from_sse(chunk)
-                    content_chunks.append(extracted_content)
+                extracted_content = self.extract_content_from_sse(chunk)
+                content_chunks.append(extracted_content)
 
                 content = "".join(content_chunks)
 
@@ -344,48 +280,9 @@ class Agent:
                 **kwargs, stream=False, response_format=self.response_format
             )
 
-            if "tool_calls" in response["choices"][0]["message"]:
-                tool_was_used = True
-                tool_calls = response["choices"][0]["message"]["tool_calls"]
-
-                for tool_call in tool_calls:
-                    tool_result = await self.execute_tool(tool_call, context)
-
-                    messages.append(
-                        {
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": [tool_call],
-                        }
-                    )
-
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tool_call["id"],
-                            "content": tool_result,
-                        }
-                    )
-
-                kwargs["messages"] = messages
-                final_response = await openai_service.generate_completion(
-                    **kwargs, stream=False, response_format=self.response_format
-                )
-                content = final_response["choices"][0]["message"]["content"]
-            else:
-                content = response["choices"][0]["message"]["content"]
+            content = response["choices"][0]["message"]["content"]
 
         self.conversation_history.append({"role": "user", "content": input_text})
-
-        if tool_was_used:
-            tool_messages = [
-                msg
-                for msg in messages
-                if msg.get("role") in ["assistant", "tool"]
-                and messages.index(msg) > len(self.conversation_history)
-            ]
-            self.conversation_history.extend(tool_messages)
-
         self.conversation_history.append({"role": "assistant", "content": content})
 
         if len(self.conversation_history) > 10:
@@ -495,6 +392,7 @@ class Agent:
                     if response.status == 200:
                         result_data = await response.json()
                         result = result_data.get("result", "No result provided")
+                        return str(result)
                     else:
                         error_text = await response.text()
                         error_msg = f"API call failed with status {response.status}: {error_text}"

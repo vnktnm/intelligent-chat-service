@@ -56,3 +56,24 @@ class ExecutionResponse(BaseModel):
     results: dict[str, Any] = Field(
         description="Dictionary of task IDs and their results"
     )
+
+
+class Citation(BaseModel):
+    citation_id: int = Field(description="A unique citation identifier")
+    chunk_id: str = Field(
+        description="Chunk ID from the retrieved chunks from the executor agent"
+    )
+    chunk_data: str = Field(
+        description="Chunk data from retrieved chunks from the executor agent."
+    )
+    chunk_file_name: str = Field(description="Filename of the retrieved chunk")
+
+
+class ConsolidatorResponse(BaseModel):
+    explanation: str = Field(
+        description="Brief explanation or thougght when consolidating the response from the previous agent."
+    )
+    result: str = Field(description="Final consolidated output")
+    citations: list[Citation] = Field(
+        description="List of citations from the source in the defined format."
+    )

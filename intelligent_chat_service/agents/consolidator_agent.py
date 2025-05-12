@@ -3,25 +3,24 @@ from typing import Optional, Literal, Any
 import config
 
 
-class ClarificationAgent(Agent):
+class ConsolidatorAgent(Agent):
     """Analyzer Agent that analyzes user queries"""
 
     def __init__(
         self,
-        name: str = "clarification",
-        description: str = "An agent that clarifies the questions with human.",
-        role: str = "clarification",
+        name: str = "consolidator",
+        description: str = "An agent that consolidates the final response.",
+        role: str = "consolidator",
         system_prompt: str = None,
         model: str = config.OPENAI_DEFAULT_MODEL,
         temperature: float = config.OPENAI_DEFAULT_TEMPERATURE,
-        max_tokens: Optional[int] = 500,
+        max_tokens: Optional[int] = None,
         tools: list[dict[str, Any]] = None,
         response_format: Optional[Any] = None,
         require_thought: Optional[bool] = False,
         human_in_the_loop: bool = False,
-        stream: Optional[bool] = False,
+        stream: Optional[bool] = True,
     ):
-        """Agent to clarify questions with human."""
 
         super().__init__(
             name=name,

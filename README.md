@@ -29,8 +29,8 @@ curl --location 'http://localhost:8000/ai/chat' \
 --header 'Content-Type: application/json' \
 --data '{
 "workflow_name": "idiscovery_orchestrator",
-"user_input": "What is an agentic AI framework",
-"selected_sources": ["Internet"],
+"user_input": "Get any 2 NAIC rules",
+"selected_sources": ["document_collection"],
 "config": {
   "thread_id": "1",
   "client_id": "2",

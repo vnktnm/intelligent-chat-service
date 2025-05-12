@@ -154,8 +154,14 @@ async def handle_orchestration(
                     orchestrator.execute(
                         context={
                             "input_text": request.user_input,
+                            "user_input": request.user_input,  # Add user_input key
                             "data_sources": request.selected_sources,
-                            "thread_id": request.config.thread_id,
+                            "thread_id": (
+                                request.config.thread_id
+                                if request.config
+                                else thread_id
+                            ),
+                            "session_id": session_id,
                         },
                         openai_service=openai_service,
                         callback=orchestrator_callback,

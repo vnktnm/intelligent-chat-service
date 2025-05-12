@@ -1,39 +1,38 @@
 from .agent import Agent
-from typing import Optional
+from typing import Optional, Literal, Any
 import config
-from utils.prompt_utils import get_prompt, get_formatted_prompt
-from schema import ChatRequest
-from schema.idiscovery_orchestrator import PlannerResponse
 
 
 class PlannerAgent(Agent):
-    """An agent that generates a plan of tasks with available tools."""
+    """Analyzer Agent that analyzes user queries"""
 
     def __init__(
         self,
-        name,
+        name: str = "planner",
+        description: str = "An agent that generates the plan based on the user query.",
+        role: str = "planner",
+        system_prompt: str = None,
         model: str = config.OPENAI_DEFAULT_MODEL,
-        temperature: float = 0.7,
-        max_tokens: Optional[int] = 1000,
-        require_thought: Optional[bool] = True,
-        request: ChatRequest = None,
+        temperature: float = config.OPENAI_DEFAULT_TEMPERATURE,
+        max_tokens: Optional[int] = None,
+        tools: list[dict[str, Any]] = None,
+        response_format: Optional[Any] = None,
+        require_thought: Optional[bool] = False,
+        human_in_the_loop: bool = False,
+        stream: Optional[bool] = False,
     ):
-        prompt = get_prompt(
-            config.PROMPT_PATH, config.PROMPT_AGENT_TYPE, config.PROMPT_PLANNER_AGENT
-        )
-        formatted_prompt = get_formatted_prompt(
-            prompt=prompt["prompt"],
-            variables={"data_source": ", ".join(request.selected_sources)},
-        )
 
         super().__init__(
             name=name,
-            description="Agent to plan the request based on the analysis",
-            role="planner",
-            system_prompt=formatted_prompt,
+            description=description,
+            role=role,
+            system_prompt=system_prompt,
             model=model,
             temperature=temperature,
-            response_format=PlannerResponse,
-            require_thought=require_thought,
             max_tokens=max_tokens,
+            tools=tools,
+            response_format=response_format,
+            require_thought=require_thought,
+            human_in_the_loop=human_in_the_loop,
+            stream=stream,
         )

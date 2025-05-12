@@ -53,6 +53,7 @@ PROMPT_CLARIFICATION_AGENT = os.environ.get(
 )
 PROMPT_EXECUTOR_AGENT = os.environ.get("PROMPT_EXECUTOR_AGENT", "executor")
 PROMPT_PLANNER_AGENT = os.environ.get("PROMPT_PLANNER_AGENT", "planner")
+PROMPT_CONSOLIDATOR_AGENT = os.environ.get("PROMPT_CONSOLIDATOR_AGENT", "consolidator")
 
 # Tools
 TOOL_QDRANT = os.environ.get("TOOL_QDRANT", "tools-qdrant")

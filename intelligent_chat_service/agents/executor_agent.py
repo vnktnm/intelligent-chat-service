@@ -67,7 +67,6 @@ class TaskExecutor:
         try:
             result = await self.executor.execute_tool(tool_call, context)
 
-            context[f"task_result_{self.task_id}"] = result
             self.executor.task_results[self.task_id] = result
             self.result = result
             self.status = "completed"
@@ -103,7 +102,6 @@ class TaskExecutor:
                     },
                 )
 
-            context[f"task_result_{self.task_id}"] = error_msg
             self.executor.task_results[self.task_id] = {
                 "error": error_msg,
                 "status": "failed",
@@ -125,43 +123,33 @@ class ExecutorAgent(Agent):
 
     def __init__(
         self,
-        name,
+        name: str = "executor",
+        description: str = "An agent that executes the plan.",
+        role: str = "executor",
+        system_prompt: str = None,
         model: str = config.OPENAI_DEFAULT_MODEL,
-        temperature: float = 0.7,
-        max_tokens: Optional[int] = 200,
+        temperature: float = config.OPENAI_DEFAULT_TEMPERATURE,
+        max_tokens: Optional[int] = 3000,
+        tools: list[dict[str, Any]] = None,
+        response_format: Optional[Any] = None,
         require_thought: Optional[bool] = False,
         human_in_the_loop: bool = False,
+        stream: Optional[bool] = False,
     ):
-        """Agent to execute the plan."""
-
-        prompt = get_prompt(
-            config.PROMPT_PATH,
-            config.PROMPT_AGENT_TYPE,
-            config.PROMPT_EXECUTOR_AGENT,
-        )
-
-        formatted_prompt = get_formatted_prompt(
-            prompt=prompt.get(
-                "prompt",
-                "You are an executor agent responsible for executing planned tasks efficiently",
-            ),
-            variables={},
-        )
 
         super().__init__(
             name=name,
-            description="Agent to execute the plan.",
-            role="executor",
-            system_prompt=formatted_prompt,
+            description=description,
+            role=role,
+            system_prompt=system_prompt,
             model=model,
             temperature=temperature,
-            response_format=ExecutionResponse,
-            require_thought=require_thought,
             max_tokens=max_tokens,
+            tools=tools,
+            response_format=response_format,
+            require_thought=require_thought,
             human_in_the_loop=human_in_the_loop,
-            tool_calls=(
-                config.AVAILABLE_TOOLS if hasattr(config, "AVAILABLE_TOOLS") else []
-            ),
+            stream=stream,
         )
 
         self.current_subgraph = None
@@ -233,8 +221,6 @@ class ExecutorAgent(Agent):
                 "results": self.task_results,
             }
 
-            context["execution_results"] = results_summary
-
             if callback:
                 await callback(
                     "execution_complete",
@@ -262,9 +248,10 @@ class ExecutorAgent(Agent):
     ) -> Dict[str, Any]:
         """Executes the executor agent - processes planner output and executes tasks"""
 
-        await self.load_tools()
+        if hasattr(self, "tools") and isinstance(self.tools, list):
+            await self.load_tools()
 
-        planner_output = context.get("planner_agent_output")
+        planner_output = context.get("planner_output")
         if not planner_output:
             logger.warning("No planner output found in context")
             if callback:
